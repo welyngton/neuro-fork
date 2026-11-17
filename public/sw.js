@@ -29,6 +29,6 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('/index.html'))),
+      .catch(() => caches.match(req).then((hit) => hit || caches.match(new URL('index.html', self.registration.scope).href))),
   );
 });

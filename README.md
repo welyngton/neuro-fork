@@ -57,7 +57,11 @@ Para ligar a nuvem, copie `.env.example` para `.env.local` e preencha `VITE_FIRE
 - **Analytics (GA4)**: com `VITE_FIREBASE_MEASUREMENT_ID`, os eventos listados em
   `src/services/AnalyticsService.ts` são enviados em produção.
 
-Deploy: `npm run deploy:hosting` (Firebase Hosting, pasta `dist`). O workflow em
+Deploy no **GitHub Pages**: o workflow `.github/workflows/pages.yml` publica o build na branch `gh-pages`
+a cada push na `main` (em Settings → Pages, escolha a branch `gh-pages`). A `main` guarda só o código-fonte
+e não funciona se servida diretamente.
+
+Deploy no Firebase: `npm run deploy:hosting` (pasta `dist`). O workflow em
 `.github/workflows/deploy.yml` roda lint, testes e build; **push na `main` publica em produção**.
 
 ## Para quem vai manter

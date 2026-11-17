@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Caminhos relativos: o mesmo build funciona na raiz (Firebase Hosting) e em subpasta (GitHub Pages).
+  base: './',
   server: { port: 5173, host: true },
   build: {
     chunkSizeWarningLimit: 1600,

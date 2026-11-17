@@ -47,7 +47,7 @@ async function start(): Promise<void> {
   document.addEventListener('visibilitychange', () => audio.setSuspended(document.hidden));
 
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
   }
   // Exposto para depuração no console e para os testes de fumaça.
   (window as unknown as { __game: Phaser.Game }).__game = game;
