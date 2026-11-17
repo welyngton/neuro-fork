@@ -50,10 +50,14 @@ export interface DesignSave {
   water?: number;
   /** A última rodada terminou voltando aos melhores pesos da validação. */
   usedEarlyStop?: boolean;
+  /** O assistente AUTO montou esta rede: nesta missão não se ganham conquistas. */
+  assisted?: boolean;
 }
 
 export interface MissionSave {
   stars: Stars;
+  /** Melhor resultado SEM o assistente AUTO (é o que conta para as conquistas). */
+  clean?: Stars;
   attempts: number;
   design?: DesignSave;
 }
@@ -106,6 +110,11 @@ type Listener = (save: SaveData) => void;
 export class GameState {
   private data: SaveData;
   private listeners = new Set<Listener>();
+  /**
+   * Modo assistido ATIVO na cena atual (as cenas de missão ligam conforme o
+   * desenho; o menu desliga). Enquanto ligado, contadores e conquistas não andam.
+   */
+  assisted = false;
 
   /** @param storage injetável para testes (padrão: `localStorage`, se existir). */
   constructor(private storage: Pick<Storage, 'getItem' | 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null) {
@@ -212,6 +221,7 @@ export class GameState {
 
   /** Soma `n` a um contador de conquistas. */
   bump(stat: string, n = 1): void {
+    if (this.assisted) return;
     this.data.stats[stat] = (this.data.stats[stat] ?? 0) + n;
     this.commit();
   }
@@ -219,7 +229,11 @@ export class GameState {
   /** Níveis atuais de todas as conquistas. */
   achievementLevels(): Record<string, number> {
     const stars: Record<string, number> = {};
-    for (const m of MISSIONS) stars[m.id] = this.stars(m.id);
+    // Vitórias com o assistente AUTO não contam: usa o melhor resultado "limpo".
+    for (const m of MISSIONS) {
+      const ms = this.data.missions[m.id];
+      stars[m.id] = ms ? (ms.clean ?? (ms.design?.assisted ? 0 : ms.stars)) : 0;
+    }
     return achievementLevels({ stats: this.data.stats, stars, upgrades: this.data.upgrades.length, finished: this.data.finished });
   }
 
@@ -228,6 +242,7 @@ export class GameState {
    * @returns as recém-conquistadas (para a cena mostrar um aviso).
    */
   claimAchievements(): { id: string; level: number }[] {
+    if (this.assisted) return [];
     const levels = this.achievementLevels();
     const fresh = ACHIEVEMENTS.filter((a) => levels[a.id] > (this.data.achievements[a.id] ?? 0)).map((a) => ({ id: a.id, level: levels[a.id] }));
     if (fresh.length) {
@@ -235,6 +250,11 @@ export class GameState {
       this.commit();
     }
     return fresh;
+  }
+
+  /** A dica já foi vista? */
+  hasTip(id: string): boolean {
+    return this.data.tips.includes(id);
   }
 
   /** Marca uma dica como vista. @returns `true` se era a primeira vez. */
@@ -277,6 +297,8 @@ export class GameState {
     ms.attempts++;
     const first = ms.stars === 0 && stars > 0;
     ms.stars = Math.max(ms.stars, stars) as Stars;
+    // `clean` passa a existir no primeiro resultado; saves antigos (sem ele) contam as estrelas normais.
+    ms.clean = (this.assisted ? (ms.clean ?? 0) : Math.max(ms.clean ?? 0, stars)) as Stars;
     if (isFinal && stars > 0) this.data.finished = true;
     this.commit();
     return first;

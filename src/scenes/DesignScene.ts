@@ -19,7 +19,11 @@
  *      SONDA     mostra o que um neurônio "enxerga" com os pesos atuais;
  *      PODA      corta o cabo de menor peso treinado (ação imediata);
  *      TRAVA     congela o peso de um cabo;
- *  - AUTO (loja), DESFAZER e BOMBA.
+ *  - LIGAR TUDO (loja), DESFAZER e BOMBA;
+ *  - ✦ AUTO: o assistente monta uma rede que funciona e explica cada escolha.
+ *    Com ele, a missão fica "assistida" e não conta para as conquistas.
+ *  - ? LEGENDA: explica cada sensor, as camadas ocultas e cada ação da missão
+ *    (abre sozinha na primeira visita a cada missão).
  *
  * ENERGIA: cada peça tem preço (`PRICE` em `core/nn/network.ts`) e a missão tem
  * uma bateria que paga a rede E o treino: o que a rede não gasta vira reserva
@@ -35,11 +39,12 @@
  */
 import Phaser from 'phaser';
 import { analytics, audio, state } from '../app/services';
-import { Blueprint, Board, autoWire, boardToTopology, emptyBoard, isAllowedLink, nodeColumn, slotId } from '../core/missions/board';
+import { Blueprint, Board, autoWire, boardFromTopology, boardToTopology, emptyBoard, isAllowedLink, nodeColumn, slotId } from '../core/missions/board';
+import { fullyConnected } from '../core/missions/catalog';
 import { getMission } from '../core/missions/catalog';
 import { fieldInputs } from '../core/missions/datasets';
 import { MissionDef, toSamples } from '../core/missions/types';
-import { Activation, PRICE, countHidden, energyCost, forward, initParams, linkKey, reconcileParams, toInputMap, validateTopology } from '../core/nn/network';
+import { PRICE, countHidden, energyCost, forward, initParams, linkKey, reconcileParams, toInputMap, validateTopology } from '../core/nn/network';
 import { DESIGN_TOOLS, DesignToolDef } from '../core/progression/tools';
 import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
@@ -56,7 +61,6 @@ type Icon = (g: Phaser.GameObjects.Graphics, c: number) => void;
 
 /** Escala pentatônica menor (em semitons) — qualquer sequência de blocos soa bem. */
 const PENTA = [0, 3, 5, 7, 10, 12, 15];
-const ACT_CYCLE: Activation[] = ['tanh', 'relu', 'sigmoid'];
 
 const ICONS: Record<string, Icon> = {
   cable: (g, c) => g.lineStyle(4, c).lineBetween(-18, 8, 18, -8).fillStyle(c).fillRect(-23, 3, 10, 10).fillRect(13, -13, 10, 10),
@@ -67,6 +71,7 @@ const ICONS: Record<string, Icon> = {
   freeze: (g, c) => g.lineStyle(4, c).strokeRect(-11, -2, 22, 16).strokeRect(-6, -13, 12, 11),
   prune: (g, c) => g.lineStyle(4, c).lineBetween(-14, -12, 10, 12).lineBetween(-14, 12, 10, -12).fillStyle(c).fillCircle(-14, -12, 5).fillCircle(-14, 12, 5),
   auto: (g, c) => g.fillStyle(c).fillTriangle(-4, -16, -12, 4, 0, 2).fillTriangle(4, 16, 12, -4, 0, -2),
+  assist: (g, c) => g.fillStyle(c).fillPoints(Array.from({ length: 8 }, (_, i) => new Phaser.Math.Vector2(Math.cos(-Math.PI / 2 + (i * Math.PI) / 4) * (i % 2 ? 6 : 16), Math.sin(-Math.PI / 2 + (i * Math.PI) / 4) * (i % 2 ? 6 : 16))), true),
 };
 
 const TOOL_COLOR: Record<string, number> = {
@@ -76,8 +81,9 @@ const TOOL_COLOR: Record<string, number> = {
   activation: C.green,
   probe: C.yellow,
   freeze: C.text,
-  prune: C.magenta,
+  prune: C.red,
   auto: C.green,
+  assist: C.magenta,
 };
 
 export class DesignScene extends BaseScene {
@@ -119,6 +125,7 @@ export class DesignScene extends BaseScene {
     const m = this.mission;
     this.bp = state.blueprint(m.id);
     this.board = state.design(m.id).board;
+    state.assisted = !!state.design(m.id).assisted;
     this.ceiling = Math.round(m.energy * state.caps.energyMul);
     this.undoStack = [];
     this.dragFrom = this.armed = null;
@@ -132,9 +139,11 @@ export class DesignScene extends BaseScene {
     this.view = new NetworkView(this, this.bp, this.board, boardRect, { showSlots: true, showHeaders: true, labelPad: 200 });
     if (m.skin === 'field') this.addDataPreview(boardRect.x + boardRect.w - 150, boardRect.y + boardRect.h - 150);
 
-    // DESFAZER e BOMBA ficam no meio da barra superior.
-    new NeonButton(this, this.W / 2 - 4 - 58, top / 2, 116, 44, `↶ ${t('design.tool.undo')}`, () => this.undo(), { color: C.text, size: 13 });
-    new NeonButton(this, this.W / 2 + 4 + 58, top / 2, 116, 44, `● ${t('design.tool.clear')}`, () => this.clearAll(), { color: C.red, size: 13 });
+    // LEGENDA, DESFAZER e BOMBA ficam no meio da barra superior.
+    const tb = 104;
+    new NeonButton(this, this.W / 2 - tb - 6, top / 2, tb, 42, t('design.legend'), () => this.openLegend(), { color: C.cyan, size: 13 });
+    new NeonButton(this, this.W / 2, top / 2, tb, 42, `↶ ${t('design.tool.undo')}`, () => this.undo(), { color: C.text, size: 13 });
+    new NeonButton(this, this.W / 2 + tb + 6, top / 2, tb, 42, `● ${t('design.tool.clear')}`, () => this.clearAll(), { color: C.red, size: 13 });
 
     // Faixa de dica com o mascote e a bateria de energia.
     const hintY = this.H - barH - 40;
@@ -142,12 +151,14 @@ export class DesignScene extends BaseScene {
     this.hint = body(this, 100, hintY, '', 21, C.text).setOrigin(0, 0.5).setWordWrapWidth(this.W - 480);
     this.energyText = title(this, this.W - 24, hintY - 18, '', 21, C.green).setOrigin(1, 0.5);
     this.energyBar = this.add.graphics();
-    body(this, this.W - 24, hintY + 24, t('design.prices', { c: PRICE.cable, n: PRICE.neuron, d: PRICE.deepNeuron }), 15, C.dim).setOrigin(1, 0.5);
+    body(this, this.W - 24, hintY + 24, t('design.prices', { c: state.caps.cablePrice, n: PRICE.neuron, d: PRICE.deepNeuron }), 15, C.dim).setOrigin(1, 0.5);
 
     this.buildHotbar(barH);
     this.bindPointer();
     this.refresh(false);
     this.announceTools();
+    // Primeira visita a esta missão: abre a legenda dos sensores e ações.
+    if (state.markTip(`legend_${m.id}`)) this.time.delayedCall(350, () => this.openLegend());
   }
 
   /** Avisa (uma vez) cada ferramenta recém-liberada pelo mapa. */
@@ -167,16 +178,16 @@ export class DesignScene extends BaseScene {
     const y = this.H - barH / 2 - 6;
     const extra = this.unlocked;
     this.modes = ['cable', 'neuron', 'eraser', ...extra.filter((d) => d.kind === 'mode').map((d) => d.id as Tool)];
-    const actions: string[] = [...extra.filter((d) => d.kind === 'action').map((d) => d.id), ...(state.caps.autowire ? ['auto'] : [])];
+    const actions: string[] = [...extra.filter((d) => d.kind === 'action').map((d) => d.id), ...(state.caps.autowire ? ['auto'] : []), 'assist'];
     const n = this.modes.length + actions.length;
     const groupGap = actions.length ? 14 : 0;
     const gap = 8;
-    const avail = this.W - 40 - 250 - groupGap;
+    const avail = this.W - 40 - 246 - groupGap;
     const bw = Math.min(124, Math.floor((avail - gap * (n - 1)) / n));
     const size = bw >= 112 ? 14 : 12;
     let x = 20 + bw / 2;
     const add = (id: string, onClick: () => void) => {
-      const label = t(`design.tool.${id}`);
+      const label = id === 'assist' ? t('assist.btn') : t(`design.tool.${id}`);
       const b = new NeonButton(this, x, y, bw, 80, label, onClick, { color: TOOL_COLOR[id], size, icon: ICONS[id] });
       x += bw + gap;
       return b;
@@ -184,7 +195,7 @@ export class DesignScene extends BaseScene {
     this.toolButtons = {};
     for (const id of this.modes) this.toolButtons[id] = add(id, () => this.setTool(id));
     x += groupGap;
-    for (const id of actions) add(id, () => (id === 'prune' ? this.prune() : this.autoWire()));
+    for (const id of actions) add(id, () => (id === 'prune' ? this.prune() : id === 'assist' ? this.openAssist() : this.autoWire()));
 
     this.nextBtn = new NeonButton(this, this.W - 130, y, 220, 80, `${t('design.next')} ▶`, () => this.toTrain(), { color: C.magenta, size: 24 });
     this.toolButtons.cable?.setSelected(true);
@@ -289,7 +300,7 @@ export class DesignScene extends BaseScene {
   /* ------------------------------------------------------------------ edições */
 
   private cost(): number {
-    return energyCost(boardToTopology(this.bp, this.board), this.mission.extraInputs);
+    return energyCost(boardToTopology(this.bp, this.board), this.mission.extraInputs, state.caps.cablePrice);
   }
 
   /** Guarda o estado atual para o DESFAZER (máx. 40 passos). */
@@ -402,13 +413,16 @@ export class DesignScene extends BaseScene {
   private cycleActivation(id: string): void {
     this.snapshot();
     const acts = (this.board.acts ??= {});
-    const next = ACT_CYCLE[(ACT_CYCLE.indexOf(acts[id] ?? 'tanh') + 1) % ACT_CYCLE.length];
+    const cycle = state.caps.activations;
+    const next = cycle[(cycle.indexOf(acts[id] ?? 'tanh') + 1) % cycle.length];
     if (next === 'tanh') delete acts[id];
     else acts[id] = next;
     const p = this.view.posOf(id);
-    audio.sfx('turn', ACT_CYCLE.indexOf(next) * 4);
+    audio.sfx('turn', cycle.indexOf(next) * 4);
     this.popAt(p.x, p.y, C.green);
     floatText(this, p.x, p.y - 34, next.toUpperCase(), css(C.green), 18);
+    // Explicação didática de cada troca (sempre, não só na primeira vez).
+    showToast(this, { title: t('act.title', { f: next.toUpperCase() }), text: t(`act.${next}`), color: C.green, life: 7000 });
     this.refresh(true);
   }
 
@@ -478,11 +492,113 @@ export class DesignScene extends BaseScene {
     this.snapshot();
     this.replaceBoard(emptyBoard(this.bp));
     state.bump('bombs');
+    // Começar do zero tira a marca de "assistida" desta missão.
+    if (state.design(this.mission.id).assisted) {
+      state.saveDesign(this.mission.id, { assisted: false });
+      state.assisted = false;
+      this.time.delayedCall(500, () => this.scene.restart());
+    }
     audio.sfx('bomb');
     this.cameras.main.shake(260, 0.012);
     this.cameras.main.flash(200, 255, 51, 85);
     burst(this, this.W / 2, this.H / 2, C.red, 40, 600);
     this.refresh(true);
+  }
+
+  /* ------------------------------------------------------------------ legenda e assistente */
+
+  /** Camada modal genérica do Design. */
+  private modal(color: number, w: number, h: number): { layer: Phaser.GameObjects.Container; x: number; y: number; close: () => void } {
+    const layer = this.add.container(0, 0).setDepth(2000);
+    this.popup = layer;
+    layer.add(this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.75).setInteractive());
+    const x = this.W / 2 - w / 2;
+    const y = this.H / 2 - h / 2;
+    layer.add(addPanel(this, { x, y, w, h }, color, 0.97));
+    const close = () => {
+      layer.destroy();
+      this.popup = null;
+    };
+    return { layer, x, y, close };
+  }
+
+  /** LEGENDA: o que cada sensor lê, o que é a camada oculta e o que cada ação faz. */
+  private openLegend(): void {
+    const w = Math.min(this.W - 60, 1180);
+    const h = this.H - 60;
+    const { layer, x, y, close } = this.modal(C.cyan, w, h);
+    layer.add(title(this, this.W / 2, y + 32, t('legend.title'), 26, C.cyan).setOrigin(0.5));
+    const colW = (w - 80) / 3;
+    const cols: [string, string, number, string[]][] = [
+      ['legend.in.t', 'legend.in.d', C.yellow, this.bp.inputs],
+      ['legend.hidden.t', 'legend.hidden.d', C.violet, []],
+      ['legend.out.t', 'legend.out.d', C.green, this.bp.outputs],
+    ];
+    cols.forEach(([tk, dk, color, ids], i) => {
+      const cx = x + 30 + i * (colW + 10);
+      const g = this.add.graphics();
+      const shape = i === 0 ? regularPoly(4, 18) : i === 1 ? regularPoly(6, 18, 0) : regularPoly(4, 16, Math.PI / 4);
+      g.fillStyle(C.bg).fillPoints(shape.map((v) => new Phaser.Math.Vector2(v.x + cx + 20, v.y + y + 90)), true);
+      g.lineStyle(3, color).strokePoints(shape.map((v) => new Phaser.Math.Vector2(v.x + cx + 20, v.y + y + 90)), true, true);
+      layer.add([g, title(this, cx + 48, y + 90, t(tk), 18, color).setOrigin(0, 0.5)]);
+      const intro = body(this, cx, y + 120, t(dk), 18, C.text).setWordWrapWidth(colW - 10).setLineSpacing(3);
+      layer.add(intro);
+      let ly = intro.y + intro.height + 14;
+      for (const id of ids) {
+        const line = body(this, cx, ly, `• ${t(`io.${id}`)}: `, 17, color).setWordWrapWidth(colW - 10);
+        const desc = body(this, cx, ly + 20, t(`io.${id}.d`), 16, C.text).setWordWrapWidth(colW - 20);
+        layer.add([line, desc]);
+        ly += 26 + desc.height;
+      }
+    });
+    layer.add(new NeonButton(this, this.W / 2, y + h - 40, 220, 52, t('legend.close'), close, { color: C.cyan, size: 18 }));
+    audio.sfx('whoosh');
+  }
+
+  /** ✦ AUTO: confirma e então monta a rede de referência explicando cada escolha. */
+  private openAssist(): void {
+    const { layer, y, close } = this.modal(C.magenta, 700, 330);
+    layer.add(title(this, this.W / 2, y + 36, t('assist.title'), 26, C.magenta).setOrigin(0.5));
+    layer.add(body(this, this.W / 2, y + 84, t('assist.confirm'), 21, C.text).setOrigin(0.5, 0).setWordWrapWidth(620).setAlign('center'));
+    layer.add(new NeonButton(this, this.W / 2 - 160, y + 280, 280, 58, t('assist.yes'), () => {
+      close();
+      this.applyAssist();
+    }, { color: C.magenta, size: 17 }));
+    layer.add(new NeonButton(this, this.W / 2 + 160, y + 280, 280, 58, t('assist.no'), close, { color: C.orange, size: 17 }));
+  }
+
+  private applyAssist(): void {
+    const m = this.mission;
+    const caps = state.caps;
+    // A referência pode usar sensores que o jogador ainda não tem (ex.: x², y²): então usa uma rede densa nos básicos.
+    let ref = m.reference.topology;
+    if (!ref.links.every(([a]) => this.bp.inputs.includes(a) || /^h/.test(a))) {
+      ref = { ...fullyConnected(m.inputs, [Math.min(this.bp.slots, 4)], m.outputs), inputs: this.bp.inputs };
+    }
+    this.snapshot();
+    this.replaceBoard(boardFromTopology(this.bp, ref));
+    const hyper = { ...m.defaults, ...m.reference.hyper };
+    if (!caps.epochValues.includes(hyper.epochs)) hyper.epochs = Math.max(...caps.epochValues);
+    const es = !!m.reference.earlyStop && caps.earlystop;
+    this.refresh(true);
+    state.saveDesign(m.id, { assisted: true, hyper, earlyStop: es });
+    state.assisted = true;
+    audio.sfx('zap');
+    this.cameras.main.flash(200, 255, 43, 214);
+
+    // Explicações, uma a uma.
+    const used = [...new Set(ref.links.map((l) => l[0]).filter((id) => !/^h/.test(id)))];
+    const unused = m.inputs.filter((id) => !used.includes(id));
+    const names = (ids: string[]) => ids.map((id) => t(`io.${id}`)).join(', ');
+    const n = ref.hidden.flat().length;
+    const steps: [string, string][] = [
+      [t('assist.s1.t'), t('assist.s1.used', { a: names(used) }) + (unused.length ? t('assist.s1.unused', { a: names(unused) }) : '')],
+      [t('assist.s2.t'), t('assist.s2.d', { n, why: t(n <= 1 ? 'assist.why.1' : 'assist.why.many') })],
+      [t('assist.s3.t'), t('assist.s3.d', { lr: hyper.learningRate, e: hyper.epochs, es: es ? t('assist.es') : '' })],
+      [t('assist.concept'), t(`mission.${m.id}.concept`)],
+    ];
+    steps.forEach(([ti, tx], i) => this.time.delayedCall(300 + i * 900, () => showToast(this, { title: `✦ ${ti}`, text: tx, color: C.magenta, life: 12000 })));
+    body(this, 170, 64, t('assist.badge'), 14, C.magenta).setOrigin(0, 1);
   }
 
   /* ------------------------------------------------------------------ sonda */

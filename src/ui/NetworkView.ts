@@ -13,7 +13,7 @@
  *
  * Formas: sensor = losango amarelo · neurônio = hexágono violeta · ação = placa verde.
  * Dentro do neurônio, o símbolo indica a ativação: triângulo = tanh (padrão),
- * rampa = ReLU, círculo = sigmoide. Cabo congelado = branco tracejado com cadeado.
+ * rampa = ReLU, círculo = sigmoide, zigue-zague = quântico (seno), pico = radial (gauss). Cabo congelado = branco tracejado com cadeado.
  */
 import Phaser from 'phaser';
 import { Blueprint, Board, nodeColumn, slotId } from '../core/missions/board';
@@ -217,6 +217,8 @@ export class NetworkView extends Phaser.GameObjects.Container {
         g.fillStyle(color).lineStyle(3, 0xffffff);
         if (fn === 'relu') g.lineBetween(p.x - 11, p.y + 6, p.x, p.y + 6).lineBetween(p.x, p.y + 6, p.x + 10, p.y - 9);
         else if (fn === 'sigmoid') g.fillStyle(0xffffff).fillCircle(p.x, p.y, 7);
+        else if (fn === 'sine') g.lineBetween(p.x - 12, p.y, p.x - 6, p.y - 8).lineBetween(p.x - 6, p.y - 8, p.x, p.y).lineBetween(p.x, p.y, p.x + 6, p.y + 8).lineBetween(p.x + 6, p.y + 8, p.x + 12, p.y);
+        else if (fn === 'gauss') g.lineBetween(p.x - 12, p.y + 7, p.x - 4, p.y + 5).lineBetween(p.x - 4, p.y + 5, p.x, p.y - 9).lineBetween(p.x, p.y - 9, p.x + 4, p.y + 5).lineBetween(p.x + 4, p.y + 5, p.x + 12, p.y + 7);
         else g.fillPoints(offset(regularPoly(3, 8), p.x, p.y), true);
       }
     }

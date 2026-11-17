@@ -20,6 +20,7 @@ import { Topology, countHidden, energyCost, forward, reconcileParams } from '../
 import { getCard } from '../core/progression/cards';
 import { Stars, calculateStars } from '../core/scoring';
 import { t } from '../services/i18n';
+import { GLOSSARY, GlossaryEntry, entryText } from '../services/i18n/glossary';
 import { NeonButton } from '../ui/NeonButton';
 import { celebrate, tip } from '../ui/Toast';
 import { burst } from '../ui/fx';
@@ -27,6 +28,22 @@ import { C, body, title } from '../ui/theme';
 import { StarRow, addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
 import { SKINS } from './skins';
+
+/** Verbetes do glossário sugeridos ao recapitular cada missão. */
+const RECAP_TERMS: Record<string, string[]> = {
+  bercario: ['neuronio', 'bias', 'atributo'],
+  triagem: ['bias', 'atributo', 'classificacao'],
+  fronteira: ['fronteira', 'validacao', 'ruido'],
+  corredor: ['argmax', 'acao', 'atributo'],
+  xor: ['xor', 'camada_oculta', 'fronteira'],
+  quadrantes: ['espaco_oculto', 'camada_oculta', 'xor'],
+  labirinto: ['argmax', 'camada_oculta', 'acao'],
+  ilha: ['fronteira', 'engenharia', 'camada_oculta'],
+  captcha: ['ativacao', 'atributo', 'ruido'],
+  luas: ['overfitting', 'early_stop', 'validacao'],
+  alvo: ['engenharia', 'atributo', 'fronteira'],
+  turing: ['classificacao', 'turing', 'dl'],
+};
 
 const SPEEDS = [1, 2, 4];
 
@@ -53,6 +70,7 @@ export class SimulationScene extends BaseScene {
   protected build(): void {
     const m = this.mission;
     const d = state.design(m.id);
+    state.assisted = !!d.assisted;
     this.bp = state.blueprint(m.id);
     this.topology = boardToTopology(this.bp, d.board);
     const params = reconcileParams(this.topology, d.params, d.seed);
@@ -119,7 +137,7 @@ export class SimulationScene extends BaseScene {
     const win = this.result.success;
     const hidden = countHidden(this.topology);
     // Energia TOTAL: o hardware (rede) mais tudo que o treino e as cartas gastaram.
-    const netCost = energyCost(this.topology, m.extraInputs);
+    const netCost = energyCost(this.topology, m.extraInputs, state.caps.cablePrice);
     const cost = netCost + Math.ceil(d.trainSpent ?? 0);
     const stars: Stars = calculateStars({ success: win, loss: d.loss, targetLoss: m.targetLoss, cost, budget: m.budget });
     const isFinal = m.id === FINAL_MISSION_ID;
@@ -153,6 +171,74 @@ export class SimulationScene extends BaseScene {
     if (getCard(d.card ?? '')?.kind === 'azar') state.bump('bad_card_wins');
     if (d.card === 'transfer') state.bump('transfer_wins');
     if (d.usedEarlyStop) state.bump('earlystop_wins');
+  }
+
+  /**
+   * RECAPITULAR: resume a missão — a rede montada, o treino feito, o resultado
+   * e o que a missão ensina, com atalho para os termos no glossário.
+   */
+  private openRecap(win: boolean, netCost: number): void {
+    const m = this.mission;
+    const d = state.design(m.id);
+    const topo = this.topology;
+    const layer = this.add.container(0, 0).setDepth(2100);
+    layer.add(this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.8).setInteractive());
+    const pw = Math.min(this.W - 60, 1100);
+    const ph = this.H - 50;
+    const px = this.W / 2 - pw / 2;
+    const py = this.H / 2 - ph / 2;
+    layer.add(addPanel(this, { x: px, y: py, w: pw, h: ph }, C.violet, 0.98));
+    layer.add(title(this, this.W / 2, py + 32, t('recap.title', { m: t(`mission.${m.id}.title`) }), 24, C.violet).setOrigin(0.5));
+
+    const used = [...new Set(topo.links.map((l) => l[0]).filter((id) => !/^h/.test(id)))];
+    const unused = topo.inputs.filter((id) => !used.includes(id));
+    const names = (ids: string[]) => (ids.length ? ids.map((id) => t(`io.${id}`)).join(', ') : t('recap.none'));
+    const acts = [...new Set(topo.hidden.flat().map((id) => topo.acts?.[id] ?? 'tanh'))];
+    const r = this.result;
+    const res = r.kind === 'classification' ? t('sim.score', { a: r.correctCount, b: r.steps.length }) : r.outcome === 'goal' ? t('sim.steps', { n: r.frames.length }) : t(`sim.reason.${r.outcome}`);
+    const tank = Math.round(m.water * state.caps.waterMul);
+    const colW = (pw - 80) / 2;
+    const section = (x: number, y: number, head: string, lines: string[], color: number) => {
+      layer.add(title(this, x, y, head, 18, color));
+      let ly = y + 32;
+      for (const line of lines) {
+        const tx = body(this, x, ly, `• ${line}`, 18, C.text).setWordWrapWidth(colW);
+        layer.add(tx);
+        ly += tx.height + 6;
+      }
+    };
+    section(px + 30, py + 74, t('recap.net'), [
+      t('recap.used', { a: names(used) }),
+      t('recap.unused', { a: names(unused) }),
+      t('recap.hidden', { n: topo.hidden.flat().length, l: topo.hidden.length, c: topo.links.length }),
+      t('recap.acts', { a: acts.join(', ') || '—' }),
+    ], C.yellow);
+    section(px + 50 + colW, py + 74, t('recap.train'), [
+      t('recap.energy', { d: netCost, t: Math.ceil(d.trainSpent ?? 0), b: Math.round(m.energy * state.caps.energyMul) }),
+      t('recap.epochs', { n: d.epochs, l: d.loss.toFixed(3) }),
+      t('recap.water', { p: Math.round(((d.water ?? tank) / tank) * 100) }),
+      ...(d.card ? [t('recap.card', { c: t(`card.${d.card}.t`) })] : []),
+      t('recap.result', { r: `${t(win ? 'sim.win' : 'sim.lose')} · ${res}` }),
+    ], C.magenta);
+
+    const ly = py + ph * 0.52;
+    layer.add(this.add.graphics().lineStyle(2, C.panelEdge).lineBetween(px + 30, ly - 14, px + pw - 30, ly - 14));
+    layer.add(title(this, px + 30, ly, t('recap.lesson'), 18, C.green));
+    const lesson = body(this, px + 30, ly + 32, t(`mission.${m.id}.recap`), 21, C.text).setWordWrapWidth(pw - 60).setLineSpacing(4);
+    layer.add(lesson);
+    if (d.assisted) layer.add(body(this, px + 30, lesson.y + lesson.height + 10, t('recap.assisted'), 17, C.magenta));
+
+    // Termos para pesquisar.
+    const terms = (RECAP_TERMS[m.id] ?? []).map((id) => GLOSSARY.find((e) => e.id === id)).filter(Boolean) as GlossaryEntry[];
+    const ty = py + ph - 140;
+    layer.add(body(this, px + 30, ty, t('recap.terms'), 17, C.dim));
+    terms.forEach((e, i) => {
+      const label = entryText(e)[0].replace(/ \(.*\)$/, '');
+      const bw = (pw - 60 - (terms.length - 1) * 12) / Math.max(3, terms.length);
+      layer.add(new NeonButton(this, px + 30 + bw / 2 + i * (bw + 12), ty + 48, bw, 46, label, () => this.go('Glossary', { id: e.id }), { color: C.green, size: 14 }));
+    });
+    layer.add(new NeonButton(this, this.W / 2, py + ph - 36, 220, 50, t('recap.close'), () => layer.destroy(), { color: C.orange, size: 17 }));
+    audio.sfx('whoosh');
   }
 
   private showResult(win: boolean, stars: Stars, isFinal: boolean, netCost: number): void {
@@ -190,7 +276,10 @@ export class SimulationScene extends BaseScene {
     layer.add(body(this, this.W / 2, py + 262, t(tease), 20, C.violet).setOrigin(0.5).setWordWrapWidth(pw - 80).setAlign('center'));
 
     const by = py + ph - 62;
-    const buttons: [string, number, () => void][] = [[t('sim.retry'), C.cyan, () => this.scene.restart()]];
+    const buttons: [string, number, () => void][] = [
+      [t('sim.recap'), C.violet, () => this.openRecap(win, netCost)],
+      [t('sim.retry'), C.cyan, () => this.scene.restart()],
+    ];
     buttons.push([`◀ ${t('phase.design')}`, C.yellow, () => this.go('Design', { missionId: m.id })]);
     if (win) buttons.push([`${isFinal ? t('sim.next') : t('nav.map')} ▶`, C.green, () => this.go(isFinal ? 'Ending' : 'Menu')]);
     else buttons.push([`◀ ${t('phase.train')}`, C.magenta, () => this.go('Train', { missionId: m.id })]);

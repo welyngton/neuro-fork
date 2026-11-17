@@ -65,6 +65,9 @@ export class MenuScene extends BaseScene {
     this.buildBriefing();
     this.select(this.selected, false);
     celebrate(this);
+    // Primeiro acesso: abre a Academia (tutorial) sozinha.
+    // (A marca só é gravada pela Academia, para sobreviver a um reinício da cena ao girar a tela.)
+    if (!state.hasTip('academy_intro')) this.time.delayedCall(400, () => this.go('Tutorial'));
   }
 
   /* ------------------------------------------------------------------ lateral */
@@ -80,15 +83,17 @@ export class MenuScene extends BaseScene {
     body(this, cx, 268, `${t('avatar.level', { n: avatarLevel(state.totalStars) })}  ·  ${t('menu.balance', { n: state.balance })}`, 18, C.yellow).setOrigin(0.5);
 
     const nav: [string, number, () => void][] = [
+      [t('menu.academy'), C.green, () => this.go('Tutorial')],
+      [t('menu.glossary'), C.green, () => this.go('Glossary')],
       [t('menu.shop'), C.yellow, () => this.go('Shop')],
       [t('menu.avatar'), C.cyan, () => this.go('Avatar')],
       [t('menu.achievements'), C.magenta, () => this.go('Achievements')],
       [t('menu.options'), C.text, () => this.openOptions()],
     ];
-    let y = 322;
+    let y = 302;
     for (const [label, color, fn] of nav) {
-      new NeonButton(this, cx, y, SIDE_W - 50, 62, label, fn, { color, size: 19 });
-      y += 72;
+      new NeonButton(this, cx, y, SIDE_W - 50, 52, label, fn, { color, size: 17 });
+      y += 60;
     }
     const user = cloud.user;
     const status = !cloud.enabled ? 'opt.cloudOff' : user ? 'opt.cloudOn' : 'opt.cloudHint';

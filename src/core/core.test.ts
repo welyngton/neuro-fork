@@ -3,7 +3,7 @@ import { MISSIONS, fullyConnected } from './missions/catalog';
 import { runMission } from './missions/runMission';
 import { MissionDef, toSamples } from './missions/types';
 import { Trainer } from './nn/Trainer';
-import { Topology, forward, initParams, energyCost, reconcileParams, validateTopology } from './nn/network';
+import { Topology, activate, activateDeriv, forward, initParams, energyCost, reconcileParams, validateTopology } from './nn/network';
 import { trainEnergyPerEpoch, waterPerEpoch } from './progression/resources';
 import { calculateStars } from './scoring';
 
@@ -52,6 +52,16 @@ describe('rede neural', () => {
     const z = forward(t, p0, { a: 2, b: -3 }, 'tanh');
     expect(z.values.h0_0).toBeCloseTo(Math.tanh(z.sums.h0_0)); // padrão do treino
     expect(z.values.h0_1).toBeCloseTo(z.sums.h0_1 > 0 ? z.sums.h0_1 : 0.01 * z.sums.h0_1); // relu escolhida no neurônio
+  });
+
+  it('derivadas das ativações batem com a diferença finita', () => {
+    for (const fn of ['tanh', 'sigmoid', 'relu', 'sine', 'gauss'] as const) {
+      for (const z of [-1.3, -0.2, 0.4, 1.7]) {
+        const h = 1e-5;
+        const num = (activate(z + h, fn) - activate(z - h, fn)) / (2 * h);
+        expect(activateDeriv(z, activate(z, fn), fn)).toBeCloseTo(num, 4);
+      }
+    }
   });
 
   it('dropout e L2 treinam sem explodir', () => {

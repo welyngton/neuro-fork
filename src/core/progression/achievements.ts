@@ -36,7 +36,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'primeiro_neuronio', tiers: [1, 25, 100], value: stat('neurons_placed') },
   { id: 'cartografo', tiers: [3, 6, 12], value: missionsWith(1) },
   { id: 'occam', tiers: [1, 6, 12], value: missionsWith(3) },
-  { id: 'zerou', tiers: [1], value: (c) => (c.finished ? 1 : 0) },
+  { id: 'zerou', tiers: [1], value: (c) => ((c.stars.turing ?? 0) > 0 ? 1 : 0) },
   { id: 'nao_sou_robo', tiers: [1], value: (c) => ((c.stars.captcha ?? 0) >= 3 ? 1 : 0) },
   { id: 'sensor_inutil', tiers: [1, 4, 8], value: stat('sparse_wins') },
   { id: 'engenheiro', tiers: [1, 3], value: stat('feature_wins') },
@@ -46,7 +46,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'maratonista', tiers: [1000, 10000, 100000], value: stat('epochs_total') },
   { id: 'cartas', tiers: [1, 10, 40], value: stat('cards_drawn') },
   { id: 'contra_tudo', tiers: [1, 5], value: stat('bad_card_wins') },
-  { id: 'colecionador', tiers: [1, 5, 9], value: (c) => c.upgrades },
+  { id: 'colecionador', tiers: [1, 7, 14], value: (c) => c.upgrades },
   { id: 'estilista', tiers: [1], value: stat('avatar_changes') },
   { id: 'poliglota', tiers: [1], value: stat('locale_changes') },
   // O lado "zoeira": tropeços que também ensinam.

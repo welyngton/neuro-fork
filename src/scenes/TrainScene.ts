@@ -39,7 +39,7 @@ import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
 import { NetworkView } from '../ui/NetworkView';
-import { celebrate, tip } from '../ui/Toast';
+import { celebrate, showToast, tip } from '../ui/Toast';
 import { burst, floatText, glow } from '../ui/fx';
 import { C, Rect, body, chamfer, css, offset, title } from '../ui/theme';
 import { LineChart, StepSlider, addPanel } from '../ui/widgets';
@@ -126,6 +126,7 @@ export class TrainScene extends BaseScene {
     const d = this.design;
     this.caps = state.caps;
     this.bp = state.blueprint(m.id);
+    state.assisted = !!d.assisted;
     this.data.set('toastSide', 'left');
     this.data.set('toastTop', 68 + 10 + 70);
     this.running = false;
@@ -139,9 +140,9 @@ export class TrainScene extends BaseScene {
     if (!LR_VALUES.includes(d.hyper.learningRate)) d.hyper.learningRate = 0.1;
 
     // Recursos desta montagem de rede.
-    this.designCost = energyCost(this.topology, m.extraInputs);
+    this.designCost = energyCost(this.topology, m.extraInputs, this.caps.cablePrice);
     this.ceiling = Math.round(m.energy * this.caps.energyMul);
-    this.tank = m.water;
+    this.tank = Math.round(m.water * this.caps.waterMul);
     this.spent = d.trainSpent ?? 0;
     this.water = d.water ?? this.tank;
 
@@ -196,6 +197,10 @@ export class TrainScene extends BaseScene {
     if (this.reserve <= 0) this.noEnergy();
     tip(this, 'resources');
     tip(this, 'loss');
+    if (d.assisted) {
+      const h = d.hyper;
+      showToast(this, { title: `✦ ${t('assist.s3.t')}`, text: t('assist.s3.d', { lr: h.learningRate, e: h.epochs, es: d.earlyStop ? t('assist.es') : '' }), color: C.magenta, life: 9000 });
+    }
   }
 
   /* ------------------------------------------------------------------ painel de recursos */
@@ -235,9 +240,14 @@ export class TrainScene extends BaseScene {
     this.hud.heat?.setFillStyle(C.red, Math.max(0, (0.5 - level) * 0.4) * (0.7 + 0.3 * Math.sin(this.time.now / 160)));
   }
 
+  /** Energia por época, já com o desconto do chip neuromórfico. */
+  private energyPerEpoch(): number {
+    return trainEnergyPerEpoch(this.designCost) * this.caps.trainEnergyMul;
+  }
+
   private rateLabel(): string {
     const lr = this.trainer?.hyper.learningRate ?? this.design.hyper.learningRate;
-    return t('train.rate', { e: (trainEnergyPerEpoch(this.designCost) * 100).toFixed(1), w: Math.round((waterPerEpoch(this.designCost, lr) * 10000) / this.tank) });
+    return t('train.rate', { e: (this.energyPerEpoch() * 100).toFixed(1), w: Math.round((waterPerEpoch(this.designCost, lr) * 10000) / this.tank) });
   }
 
   /* ------------------------------------------------------------------ painel direito */
@@ -639,12 +649,15 @@ export class TrainScene extends BaseScene {
     tip(this, 'cards');
   }
 
-  /** CARTA DO DESTINO: surge sozinha, virada. Aceitar (e descobrir) ou passar. */
+  /**
+   * CARTA DO DESTINO: surge sozinha, se vira e já vale — sorte ou revés, não há
+   * escolha. O jogador lê o que aconteceu e volta ao treino.
+   */
   private openFate(): void {
     const card = dealFate();
     audio.sfx('zap', 5);
     const { layer, close } = this.openModal('cards.fateTitle', t('cards.fateSub'));
-    const cw = 270;
+    const cw = 290;
     const ch = 360;
     const box = this.add.container(this.W / 2, 330);
     const back = this.add.graphics();
@@ -652,43 +665,39 @@ export class TrainScene extends BaseScene {
     for (let k = 0; k < 6; k++) back.lineStyle(2, C.violet, 0.35).strokePoints(chamfer(cw - 30 - k * 34, ch - 30 - k * 50, 16), true, true);
     box.add([back, title(this, 0, -10, '?', 110, C.violet).setOrigin(0.5)]);
     box.setScale(0.2).setAngle(-30);
-    this.tweens.add({ targets: box, scale: 1, angle: 0, duration: 420, ease: 'Back.out' });
-    // Brilho pulsando para chamar a atenção.
-    const aura = glow(this, this.W / 2, 330, C.violet, 4, 0.35);
-    this.tweens.add({ targets: aura, alpha: 0.7, duration: 500, yoyo: true, repeat: -1 });
+    const aura = glow(this, this.W / 2, 330, card.kind === 'azar' ? C.red : C.green, 4, 0.3);
     layer.add([aura, box]);
-    let done = false;
-    const accept = new NeonButton(this, this.W / 2 - 160, this.H - 52, 280, 60, t('cards.accept'), () => {
-      if (done) return;
-      done = true;
-      state.bump('cards_drawn');
-      // Vira a carta: achata, troca a face, abre de novo.
-      this.tweens.add({
-        targets: box,
-        scaleX: 0,
-        duration: 160,
-        onComplete: () => {
-          box.removeAll(true);
-          this.cardFace(box, card, cw, ch);
-          this.applyCard(card);
-          audio.sfx(card.kind === 'azar' ? 'bad' : 'good');
-          if (card.kind === 'azar') this.cameras.main.shake(220, 0.012);
-          else burst(this, box.x, box.y, C.green, 30, 420);
-          this.tweens.add({ targets: box, scaleX: 1, duration: 160 });
-          celebrate(this);
-          this.time.delayedCall(2300, close);
+    // Entra girando, para um instante e se vira sozinha.
+    this.tweens.chain({
+      targets: box,
+      tweens: [
+        { scale: 1, angle: 0, duration: 420, ease: 'Back.out' },
+        {
+          scaleX: 0,
+          duration: 160,
+          delay: 500,
+          onComplete: () => {
+            box.removeAll(true);
+            this.cardFace(box, card, cw, ch);
+            this.applyCard(card);
+            state.bump('cards_drawn');
+            audio.sfx(card.kind === 'azar' ? 'bad' : 'good');
+            if (card.kind === 'azar') this.cameras.main.shake(220, 0.012);
+            else burst(this, box.x, box.y, C.green, 30, 420);
+            celebrate(this);
+          },
         },
-      });
-    }, { color: C.green, size: 18 });
-    accept.setData('choice', 0);
-    const pass = new NeonButton(this, this.W / 2 + 160, this.H - 52, 280, 60, t('cards.pass'), () => {
-      if (done) return;
-      done = true;
-      audio.sfx('whoosh');
-      this.tweens.add({ targets: box, x: this.W + 300, angle: 40, duration: 300, onComplete: close });
-    }, { color: C.orange, size: 18 });
-    pass.setData('choice', -1);
-    layer.add([accept, pass]);
+        { scaleX: 1, duration: 160 },
+      ],
+    });
+    this.tweens.add({ targets: aura, alpha: 0.6, duration: 500, yoyo: true, repeat: -1 });
+    const back2 = new NeonButton(this, this.W / 2, this.H - 52, 320, 60, t('cards.back'), () => {
+      // Só fecha depois que a carta virou (o efeito já foi aplicado).
+      if (box.scaleX < 0.99 || box.length < 3) return;
+      close();
+    }, { color: C.cyan, size: 18 });
+    back2.setData('choice', -1);
+    layer.add(back2);
   }
 
   /**
@@ -699,7 +708,8 @@ export class TrainScene extends BaseScene {
   resolveDraw(i: number): boolean {
     const layer = this.children.list.find((o) => (o as Phaser.GameObjects.Container).depth === 2000) as Phaser.GameObjects.Container | undefined;
     if (!layer) return false;
-    const target = layer.list.find((o) => (o as Phaser.GameObjects.GameObject).getData?.('choice') === i) as Phaser.GameObjects.GameObject | undefined;
+    const find = (c: number) => layer.list.find((o) => (o as Phaser.GameObjects.GameObject).getData?.('choice') === c) as Phaser.GameObjects.GameObject | undefined;
+    const target = find(i) ?? find(-1);
     target?.emit('pointerup');
     return true;
   }
@@ -792,7 +802,7 @@ export class TrainScene extends BaseScene {
       // Para exatamente na época de cada evento.
       for (const at of [this.shopAt, this.fateAt]) if (at >= 0 && at > tr.epoch) n = Math.min(n, at - tr.epoch);
       // E não gasta mais energia do que tem.
-      const perE = trainEnergyPerEpoch(this.designCost);
+      const perE = this.energyPerEpoch();
       const perW = waterPerEpoch(this.designCost, tr.hyper.learningRate);
       const affordable = Math.floor(this.reserve / perE + 1e-9);
       n = Math.max(0, Math.min(n, affordable, tr.hyper.epochs - tr.epoch));

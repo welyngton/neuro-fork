@@ -20,7 +20,7 @@ src/
 │   └── scoring.ts       regra das estrelas
 ├── state/GameState.ts   progresso + opções + desenho salvo; persiste em localStorage
 ├── services/
-│   ├── i18n/            index.ts (t, setLocale) · pt.ts · en.ts
+│   ├── i18n/            index.ts (t, setLocale) · pt.ts · en.ts · glossary.ts (verbetes)
 │   ├── FirebaseService.ts   login Google, Firestore (usuarios/{uid}), Firebase Analytics
 │   ├── googleTag.ts         gtag.js (GA4) e Google Tag Manager
 │   ├── AnalyticsService.ts  fachada de eventos
@@ -36,7 +36,8 @@ src/
 ├── entities/Robot.ts    o mascote
 └── scenes/
     ├── BaseScene.ts     base comum (fade, barra superior, wait/tween com await)
-    ├── BootScene · MenuScene · ShopScene · AvatarScene · AchievementsScene
+    ├── BootScene · MenuScene · TutorialScene · GlossaryScene
+    ├── ShopScene · AvatarScene · AchievementsScene
     ├── DesignScene · TrainScene · SimulationScene · EndingScene
     └── skins/           como cada simulação é ENCENADA: sorter · maze · field · captcha · turing
 ```
@@ -106,6 +107,17 @@ lógicos; texto ≥ 16 px lógicos.
 - Conquista: `core/progression/achievements.ts` e textos `ach.<id>.*`; se precisar de um contador
   novo, chame `state.bump('nome')` na cena certa e liste a chave em `SaveData.stats`.
 - Avatar: `core/progression/avatars.ts` e o desenho em `entities/Robot.ts`.
+
+### Glossário, Academia e recapitulação
+- Verbete: um objeto em `services/i18n/glossary.ts` (`see` = relacionados).
+- Slide da Academia: textos `tut.<n>.*` e uma função de desenho em `SLIDES` (`TutorialScene`).
+- Recapitulação: texto `mission.<id>.recap` e termos sugeridos em `RECAP_TERMS` (`SimulationScene`).
+- Sensores/ações: nome `io.<id>` e descrição `io.<id>.d` (usados na Legenda do Design).
+
+### Modo assistido
+`DesignSave.assisted` marca a missão; as cenas de missão ligam `state.assisted`, que faz
+`bump` e `claimAchievements` não contarem, e `recordResult` guarda o melhor resultado "limpo"
+(`MissionSave.clean`) que é o usado pelas conquistas.
 
 ### Criar uma dica de conceito
 Textos `tip.<id>.t` / `tip.<id>.d` no i18n e `tip(this, '<id>')` no ponto da cena em que o

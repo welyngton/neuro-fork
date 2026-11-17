@@ -4,6 +4,7 @@ import { ACHIEVEMENTS } from '../core/progression/achievements';
 import { dealFate, dealTactics, modsOf } from '../core/progression/cards';
 import { capsFor } from '../core/progression/upgrades';
 import { getMission } from '../core/missions/catalog';
+import { GLOSSARY, searchGlossary } from '../services/i18n/glossary';
 import { GameState } from './GameState';
 
 function memoryStorage() {
@@ -59,6 +60,32 @@ describe('GameState', () => {
     expect(s.claimAchievements()).toEqual([]);
     s.bump('neurons_placed', 30);
     expect(s.claimAchievements()).toEqual([{ id: 'primeiro_neuronio', level: 2 }]);
+  });
+});
+
+describe('modo assistido', () => {
+  it('não conta contadores nem conquistas, mas as estrelas valem', () => {
+    const s = new GameState(memoryStorage());
+    s.assisted = true;
+    s.bump('neurons_placed', 50);
+    s.recordResult('bercario', 3, false);
+    expect(s.claimAchievements()).toEqual([]);
+    expect(s.stars('bercario')).toBe(3);
+    s.assisted = false;
+    expect(s.achievementLevels().primeiro_neuronio).toBe(0);
+    expect(s.achievementLevels().occam).toBe(0);
+    s.recordResult('bercario', 3, false);
+    expect(s.achievementLevels().occam).toBe(1);
+  });
+});
+
+describe('glossário', () => {
+  it('busca sem acento e sem caixa, e todo "veja também" existe', () => {
+    expect(searchGlossary('regularizacao').map((e) => e.id)).toContain('regularizacao');
+    expect(searchGlossary('relu').map((e) => e.id)).toContain('relu');
+    expect(GLOSSARY.length).toBeGreaterThanOrEqual(35);
+    const ids = new Set(GLOSSARY.map((e) => e.id));
+    for (const e of GLOSSARY) for (const r of e.see ?? []) expect(ids.has(r)).toBe(true);
   });
 });
 

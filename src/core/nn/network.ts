@@ -15,8 +15,11 @@
  *  - `trainEpoch`= uma passada de backpropagation sobre o dataset inteiro.
  */
 
-/** Funções de ativação disponíveis para os neurônios ocultos. A saída usa sempre sigmoide. */
-export type Activation = 'sigmoid' | 'tanh' | 'relu';
+/**
+ * Funções de ativação disponíveis para os neurônios ocultos. A saída usa sempre sigmoide.
+ * `sine` (neurônio quântico, ondulatório) e `gauss` (neurônio radial) vêm de upgrades.
+ */
+export type Activation = 'sigmoid' | 'tanh' | 'relu' | 'sine' | 'gauss';
 
 export const ACTIVATIONS: Activation[] = ['tanh', 'sigmoid', 'relu'];
 
@@ -104,11 +107,12 @@ export const PRICE = {
  * mais) + sensores derivados em uso. É o número que o Design mostra na bateria
  * e que o jogo compara com o teto e com o limiar (oculto) de eficiência.
  * @param derived ids dos sensores derivados da missão.
+ * @param cablePrice preço de cada cabo (o upgrade de cabos multidimensionais barateia).
  */
-export function energyCost(t: Topology, derived: readonly string[] = []): number {
+export function energyCost(t: Topology, derived: readonly string[] = [], cablePrice: number = PRICE.cable): number {
   const used = new Set(t.links.map((l) => l[0]));
   const neurons = t.hidden.reduce((n, layer, i) => n + layer.length * (i === 0 ? PRICE.neuron : PRICE.deepNeuron), 0);
-  return t.links.length * PRICE.cable + neurons + derived.filter((id) => used.has(id)).length * PRICE.derived;
+  return Math.ceil(t.links.length * cablePrice + neurons + derived.filter((id) => used.has(id)).length * PRICE.derived);
 }
 
 /** Total de neurônios ocultos do desenho. */
@@ -141,6 +145,10 @@ export function activate(x: number, fn: Activation): number {
       return Math.tanh(x);
     case 'relu':
       return x > 0 ? x : 0.01 * x; // leaky: evita neurônios "mortos"
+    case 'sine':
+      return Math.sin(x); // periódica: dobra o espaço várias vezes
+    case 'gauss':
+      return Math.exp(-x * x); // radial: dispara só perto de um ponto
   }
 }
 
@@ -153,6 +161,10 @@ export function activateDeriv(z: number, a: number, fn: Activation): number {
       return 1 - a * a;
     case 'relu':
       return z > 0 ? 1 : 0.01;
+    case 'sine':
+      return Math.cos(z);
+    case 'gauss':
+      return -2 * z * a;
   }
 }
 

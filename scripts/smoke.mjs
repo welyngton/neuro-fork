@@ -25,6 +25,8 @@ async function open(width, height) {
   await page.waitForTimeout(700);
   return page;
 }
+/** Fecha a legenda/sonda que o Design abre sozinho na primeira visita. */
+const closePopup = (page) => page.evaluate(() => { const s = window.__game.scene.getScene('Design'); s.popup?.destroy(); s.popup = null; });
 const active = (page, key) => page.waitForFunction((k) => window.__game.scene.isActive(k), key);
 const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png` });
 /** Troca de cena a partir de qualquer cena ativa. */
@@ -35,11 +37,31 @@ const goto = async (page, key, data) => {
 };
 
 const page = await open(1280, 720);
+// Primeiro acesso: a Academia (tutorial) abre sozinha.
+await page.waitForFunction(() => window.__game.scene.isActive('Tutorial'), null, { timeout: 8000 });
+await page.waitForTimeout(800); await shot(page, '00a-academia-1');
+for (let i = 0; i < 4; i++) await page.evaluate(() => window.__game.scene.getScene('Tutorial').show(window.__game.scene.getScene('Tutorial').index + 1));
+await page.waitForTimeout(700); await shot(page, '00b-academia-5');
+await page.evaluate(() => window.__game.scene.getScene('Tutorial').go('Menu'));
+await page.waitForFunction(() => window.__game.scene.isActive('Menu'));
+await page.waitForTimeout(700);
 await shot(page, '01-menu');
+// Glossário com busca.
+await page.evaluate(() => window.__game.scene.getScene('Menu').go('Glossary'));
+await page.waitForFunction(() => window.__game.scene.isActive('Glossary'));
+await page.waitForTimeout(600);
+await page.fill('input[type=search]', 'over');
+await page.waitForTimeout(400);
+await page.evaluate(() => window.__game.scene.getScene('Glossary').show('overfitting'));
+await page.waitForTimeout(300); await shot(page, '01b-glossario');
+const found = await page.evaluate(() => window.__game.scene.getScene('Glossary').items.map((e) => e.id));
+if (!found.includes('overfitting')) throw new Error('busca do glossário falhou: ' + found);
 
 // Edição manual no Design: neurônio, cabo arrastado, toque-toque, cabo direto
 // sensor->ação (proibido) e borracha.
 await goto(page, 'Design', { missionId: 'bercario' });
+await page.waitForTimeout(700); await shot(page, '02a-legenda');
+await closePopup(page);
 {
   const info = () => page.evaluate(() => { const s = window.__game.scene.getScene('Design'); return { a: s.view.posOf('cantos'), b: s.view.posOf('buraco_b'), h: s.view.posOf('h0_0'), links: s.board.links.length, neuron: s.board.hidden[0][0] }; });
   const p = await info();
@@ -80,6 +102,8 @@ for (const id of ids) {
   let stars = 0;
   for (let attempt = 1; attempt <= 8 && stars < 2; attempt++) {
     await goto(page, 'Design', { missionId: id });
+    await page.waitForTimeout(400);
+    await closePopup(page);
     if (attempt === 1) await shot(page, `03-design-${id}`);
     await goto(page, 'Train', { missionId: id });
     await page.mouse.click(640, 668); // TREINAR
@@ -119,11 +143,29 @@ for (const id of ids) {
     await page.waitForTimeout(1600);
     stars = await page.evaluate((id) => window.__neuro.state.stars(id), id);
     if (stars < 2) await page.evaluate((id) => { const s = window.__neuro.state; s.saveDesign(id, { seed: s.design(id).seed + 1, params: null, epochs: 0, trainSpent: 0, water: undefined }); }, id);
-    else await shot(page, `06-result-${id}`);
+    else {
+      await shot(page, `06-result-${id}`);
+      if (id === 'quadrantes') {
+        await page.evaluate(() => window.__game.scene.getScene('Simulation').openRecap(true, 12));
+        await page.waitForTimeout(500); await shot(page, '06b-recapitular');
+      }
+    }
   }
   console.log(id.padEnd(11), 'estrelas:', stars);
   if (!stars) throw new Error(`${id}: não venceu em 8 tentativas`);
 }
+
+// Assistente AUTO: monta a rede, explica, e a missão deixa de contar para conquistas.
+await goto(page, 'Design', { missionId: 'triagem' });
+await closePopup(page);
+await page.evaluate(() => window.__game.scene.getScene('Design').applyAssist());
+await page.waitForTimeout(3500); await shot(page, '02b-assistente');
+const assisted = await page.evaluate(() => window.__neuro.state.design('triagem').assisted && window.__neuro.state.assisted);
+if (!assisted) throw new Error('assistente não marcou a missão');
+await goto(page, 'Design', { missionId: 'xor' });
+await closePopup(page);
+await page.evaluate(() => { const s = window.__game.scene.getScene('Design'); const id = s.view.bp ? 'h0_0' : 'h0_0'; s.setTool('activation'); s.cycleActivation(id); });
+await page.waitForTimeout(600); await shot(page, '02c-toast-ativacao');
 
 // Superaquecimento: tanque quase vazio e treina.
 await page.evaluate(() => window.__neuro.state.saveDesign('bercario', { water: 0.3, trainSpent: 0, epochs: 0 }));

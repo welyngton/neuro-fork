@@ -16,6 +16,8 @@ import { AvatarScene } from './scenes/AvatarScene';
 import { BootScene } from './scenes/BootScene';
 import { DesignScene } from './scenes/DesignScene';
 import { EndingScene } from './scenes/EndingScene';
+import { GlossaryScene } from './scenes/GlossaryScene';
+import { TutorialScene } from './scenes/TutorialScene';
 import { MenuScene } from './scenes/MenuScene';
 import { ShopScene } from './scenes/ShopScene';
 import { SimulationScene } from './scenes/SimulationScene';
@@ -40,8 +42,10 @@ async function start(): Promise<void> {
       height: GAME_HEIGHT,
     },
     input: { activePointers: 2 },
+    // Elementos HTML por cima do canvas (campo de busca do glossário).
+    dom: { createContainer: true },
     render: { antialias: true, powerPreference: 'high-performance' },
-    scene: [BootScene, MenuScene, ShopScene, AvatarScene, AchievementsScene, DesignScene, TrainScene, SimulationScene, EndingScene],
+    scene: [BootScene, MenuScene, TutorialScene, GlossaryScene, ShopScene, AvatarScene, AchievementsScene, DesignScene, TrainScene, SimulationScene, EndingScene],
   });
   watchViewport(game);
   bootServices(game);

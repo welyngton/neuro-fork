@@ -23,7 +23,7 @@ export class ShopScene extends BaseScene {
 
   protected build(): void {
     const top = this.addPageHeader('shop.title', C.yellow);
-    const cols = 3;
+    const cols = UPGRADES.length > 9 ? 4 : 3;
     const gap = 14;
     const cw = (this.W - 40 - gap * (cols - 1)) / cols;
     const rows = Math.ceil(UPGRADES.length / cols);
@@ -36,16 +36,16 @@ export class ShopScene extends BaseScene {
       const missing = up.cost - state.balance;
       const color = up.area === 'design' ? C.yellow : C.magenta;
       addPanel(this, { x, y, w: cw, h: ch }, owned ? C.green : color, owned ? 0.6 : 0.9);
-      title(this, x + 18, y + 16, t(`upg.${up.id}.t`), 20, owned ? C.green : color);
-      addChip(this, 0, y + 28, t(`shop.area.${up.area}`), color, false).setOrigin(1, 0.5).setX(x + cw - 14);
-      body(this, x + 18, y + 52, t(`upg.${up.id}.d`), 20, C.text).setWordWrapWidth(cw - 36);
+      title(this, x + 16, y + 12, t(`upg.${up.id}.t`), 16, owned ? C.green : color).setWordWrapWidth(cw - 110);
+      addChip(this, 0, y + 22, t(`shop.area.${up.area}`), color, false).setOrigin(1, 0.5).setX(x + cw - 10).setScale(0.8);
+      body(this, x + 16, y + 40, t(`upg.${up.id}.d`), 17, C.text).setWordWrapWidth(cw - 32);
       const label = owned ? `✓ ${t('shop.owned')}` : missing > 0 ? t('shop.poor', { n: missing }) : t('shop.buy', { n: up.cost });
       const btn = new NeonButton(
         this,
         x + cw / 2,
-        y + ch - 40,
-        cw - 36,
-        54,
+        y + ch - 30,
+        cw - 32,
+        42,
         label,
         () => {
           if (!state.buy(up.id)) return void audio.sfx('error');
@@ -54,7 +54,7 @@ export class ShopScene extends BaseScene {
           burst(this, x + cw / 2, y + ch / 2, C.yellow, 40, 500);
           this.time.delayedCall(350, () => this.scene.restart());
         },
-        { color: owned ? C.green : missing > 0 ? C.dim : C.yellow, size: 18 },
+        { color: owned ? C.green : missing > 0 ? C.dim : C.yellow, size: 15 },
       );
       if (owned || missing > 0) btn.disableInteractive();
     });
