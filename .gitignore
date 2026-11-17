@@ -10,10 +10,6 @@ firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
 
-# docs
-docs
-SDD.md
-implemetation_plan.md
 
 # Dependencies & Build
 node_modules
@@ -46,3 +42,6 @@ coverage
 /blob-report/
 /playwright/.cache/
 
+
+# Capturas do teste de fumaça
+/screenshots/

@@ -1,185 +1,74 @@
-# NeuroBot — Jogo Web Educativo de Redes Neurais
+# NeuroBot — jogo web de redes neurais (Phaser)
 
-> **Idealizado e construído por Alexsander D. Cruz**
-> Trabalho da disciplina **Fundamentos em Pesquisa Operacional (FPO)**
-> **Programa de Pós-Graduação em Computação Aplicada (PPCA)** — Mestrado Profissional — **Universidade de Brasília (UnB) — 2026.2**
+> Fork gamificado do **NeuroBot**, idealizado e construído por **Alexsander D. Cruz**
+> (disciplina FPO — PPCA/UnB, 2026.2). Esta versão reescreve o jogo em **Phaser 3**.
 
----
+Você desenha o cérebro de um robô, treina a rede neural e assiste ao robô enfrentar
+simulações cada vez mais difíceis — de um brinquedo de encaixar formas até passar por
+humano num Teste de Turing.
 
-## 📖 Visão Geral
+**Roda só no navegador**, em celular (deitado) e desktop. Não há assets: toda a arte é
+desenhada por código (polígonos) e todo o som é sintetizado (Web Audio).
 
-**NeuroBot** é um jogo web interativo em que estudantes do ensino médio e graduação (14+ anos) e iniciantes em Aprendizado de Máquina (*Machine Learning*) montam pequenas redes neurais artificiais, ajustam seus hiperparâmetros, treinam-nas em tempo real diretamente no navegador com **TensorFlow.js** (executando em *Web Worker*) e testam um robô autônomo em uma **Arena 2D determinística (Pixi.js)**.
+## Fluxo do jogo
 
-Toda a aplicação adota o princípio pedagógico **"aprenda fazendo, nomeie depois"**: cada conceito aparece primeiro como mecânica prática de jogo e só depois recebe a nomenclatura formal.
-
----
-
-## 🎯 Objetivos de Aprendizagem
-
-Ao concluir as 5 fases do jogo, o estudante é capaz de:
-
-1. **Explicar o funcionamento de um neurônio artificial (*Perceptron*)**: entradas, pesos ($w$), limiar (*bias* $b$), soma ponderada ($z$) e função de ativação ($a$).
-2. **Montar uma topologia em camadas**: compreender o papel da camada de entrada (sensores do robô), das camadas ocultas e da camada de saída (ações).
-3. **Ajustar hiperparâmetros**: observar na prática o efeito da taxa de aprendizado (`0,001–1,0`), do número de épocas (`1–500`), da inicialização de pesos e da função de ativação (`step`, `sigmoid`, `relu`, `tanh`).
-4. **Interpretar curvas de aprendizado**: ler o gráfico de perda (*loss*) por época e reconhecer *underfitting* e *overfitting*.
-5. **Diferenciar paradigmas de aprendizado**: contrastar o **aprendizado supervisionado** (imitar exemplos rotulados nas Fases 1–4) com o **aprendizado por reforço** (maximizar recompensas e evitar penalidades na Fase 5).
-
----
-
-## 🎮 Mecânicas e As 5 Fases do Jogo
-
-Cada fase segue o ciclo de 4 passos:
-1. **Montar (Editor de Neurônios)**: arrastar ou ativar via teclado sensores (entradas), neurônios ocultos e ações (saídas), conectando-os com cabos (espessura = magnitude $|w|$; azul sólido `+` = peso positivo; laranja tracejado `−` = peso negativo).
-2. **Ajustar (Painel de Parâmetros)**: configurar taxa de aprendizado, épocas, função de ativação, *bias* e (nas Fases 1 e 2) pesos manuais, com dicas contextuais *"O que isso faz?"*.
-3. **Treinar (TensorFlow.js em Web Worker)**: acompanhar a curva de *loss* ou recompensa ao vivo sem travar a interface (60 fps), podendo pausar, retomar ou reiniciar.
-4. **Testar (Arena 2D)**: executar o robô a 30 ticks/s nas velocidades $0{,}5\times$, $1\times$ ou $4\times$, com **Replay do Episódio**.
-
-### Critério de Pontuação (1 a 3 Estrelas)
-- ⭐ **1 Estrela**: desafio da arena superado pelo robô.
-- ⭐⭐ **2 Estrelas**: desafio superado com *loss* final abaixo da meta da fase.
-- ⭐⭐⭐ **3 Estrelas**: desafio superado com *loss* abaixo da meta e usando no máximo o **número ideal de neurônios ocultos** (incentivando redes enxutas).
-
-### Tabela de Fases (MVP)
-
-| Fase | Desafio na Arena 2D | Conceito Ensinado | Rede Ideal | Paradigma |
-| :--- | :--- | :--- | :---: | :--- |
-| **1. Primeiro passo** | Pular caixas quando estiverem perto | Neurônio único, peso e limiar (*Perceptron*) | `1 → 1` | Supervisionado |
-| **2. Porta lógica** | Abrir a porta com botões acesos no chão (`AND` / `OR`) | *Bias* e separação linear | `2 → 1` | Supervisionado |
-| **3. Corredor** | Seguir um corredor sinuoso sem bater nas paredes | Camada oculta e ativação não linear | `3 → 4 → 3` | Supervisionado |
-| **4. O XOR** | Abrir porta que exige exatamente um botão aceso | Limite linear de 1 neurônio e *Backpropagation* | `2 → 2 → 1` | Supervisionado |
-| **5. Labirinto** | Chegar ao alvo num labirinto curto desviando de blocos | Aprendizado por reforço (recompensa vs. penalidade) | `4 → 6 → 3` | Reforço |
-
----
-
-## 🏗️ Arquitetura Técnica e Stack
-
-| Camada | Tecnologia | Motivo / Implementação |
-| :--- | :--- | :--- |
-| **Build e UI** | Vite + React 18 + TypeScript (`strict: true`) | Build rápido, tipagem estrita e *code-splitting* (`< 400 KB` gzip inicial) |
-| **Estado** | Zustand (`src/store/useGameStore.ts`) | Gerenciamento reativo sem *boilerplate* e integrado ao Firestore |
-| **Editor de Rede** | React Flow + Canvas SVG Acessível (`src/features/editor/`) | Manipulação por mouse e teclado (`Enter`/`Espaço`/`Delete`) e inspeção de $z$ e $a$ (RF-06) |
-| **Núcleo & Treino** | `nn-core` Puro TS + TensorFlow.js em Web Worker | *Forward pass* determinístico compartilhado entre treino e arena (`src/workers/train.worker.ts`) |
-| **Arena 2D** | Pixi.js + Simulação Determinística (`src/core/simulation/`) | Física 2D a 30 ticks/s com *seed* fixa (`42`), desacoplada da renderização |
-| **Gráficos** | Recharts (`src/features/params/`) | Curva de *loss* e recompensa atualizada ao vivo |
-| **Backend & Nuvem** | Firebase Hosting, Auth, Firestore e Analytics | Login anônimo + vínculo com conta Google preservando UID e até 10 redes salvas por fase |
-| **Testes** | Vitest, Testing Library e Playwright | Cobertura $> 94\%$ em `src/core/*` + Teste E2E automatizado da Fase 1 |
-
----
-
-## 📂 Estrutura de Pastas
-
-```text
-unb_mestradoFPO/
-├── src/
-│   ├── core/
-│   │   ├── nn-core/          # Topologia, forward pass puro TS e adaptador TensorFlow.js
-│   │   ├── simulation/       # Robô, sensores, física 2D determinística (seed 42) e replay
-│   │   └── scoring/          # Cálculo de 1 a 3 estrelas
-│   ├── workers/
-│   │   └── train.worker.ts   # Treino TensorFlow.js assíncrono em Web Worker
-│   ├── features/
-│   │   ├── editor/           # Editor visual de neurônios e inspeção em tempo real (RF-06)
-│   │   ├── params/           # Painel de hiperparâmetros, dicas (RF-04) e gráfico Recharts
-│   │   ├── arena/            # Arena 2D Pixi.js, telemetria e replay (RF-07)
-│   │   └── levels/           # Seleção das 5 fases, tutorial guiado, glossário e quiz (RF-10)
-│   ├── levels/               # Definição estática das 5 fases (01-first-step.json a 05-maze.json)
-│   ├── services/
-│   │   └── firebase.ts       # Auth, Firestore, emulador de regras e eventos Analytics
-│   ├── store/
-│   │   └── useGameStore.ts   # Estado global Zustand + persistência em nuvem
-│   ├── i18n/                 # Dicionários completos pt-BR.json e en.json (RNF-07)
-│   └── __tests__/            # 9 suítes de testes unitários e de integração (Vitest)
-├── e2e/
-│   └── level1.spec.ts        # Teste End-to-End (Playwright) da Fase 1 completa
-├── public/
-│   ├── manifest.webmanifest  # Manifesto PWA offline (RNF-06)
-│   └── sw.js                 # Service Worker para cache e execução offline
-├── firebase.json             # Configuração do Firebase Hosting (SPA + headers de cache)
-├── firestore.rules           # Regras de segurança por usuário (users/{uid}/**)
-├── .firebaserc               # Projetos neurobot-dev e neurobot-prod
-├── .github/workflows/
-│   └── deploy.yml            # Pipeline CI/CD GitHub Actions + Firebase Hosting
-└── docs/
-    └── SDD.md                # Documento de Especificação de Software (SDD)
+```
+MENU (opções + mapa de missões)
+   └─► 1. DESIGN ──► 2. TREINO ──► 3. SIMULAÇÃO ──► resultado (0–3 ★) ──► mapa
+            ▲            │               │
+            └────────────┴───────────────┘   (pode voltar a qualquer momento)
 ```
 
----
+| # | Missão | Simulação | Conceito | Rede de referência |
+|---|--------|-----------|----------|--------------------|
+| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único | 1 → 1 |
+| 2 | Triagem | só quadrado grande vai no buraco B | bias, porta E | 2 → 1 |
+| 3 | Corredor de Dados | atravessar um corredor sem bater | várias saídas (argmax) | 3 → 3 |
+| 4 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta | 2 → 2 → 1 |
+| 5 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 4 → 4 |
+| 6 | CAPTCHA | marcar os quadros com triângulos | fronteira não linear, sensor inútil | 2 → 2 → 1 |
+| 7 | Teste de Turing | responder à juíza como um humano | multiclasse — zera o jogo | 3 → 4 |
 
-## 🚀 Como Executar Localmente
+Estrelas: ★ venceu · ★★ perda final abaixo da meta · ★★★ rede enxuta (neurônios ocultos ≤ ideal).
 
-### 1. Pré-requisitos
-- **Node.js** `>= 20` (recomendado `v22 LTS`)
-- **npm** `>= 10`
+## Rodando
 
-### 2. Instalação e Configuração das Variáveis de Ambiente
+Requer Node.js ≥ 20.
 
-Clone o repositório, instale as dependências e crie o arquivo `.env.local` a partir de `.env.example`:
-
-**No Windows (PowerShell):**
-```powershell
-npm install
-Copy-Item .env.example .env.local
-```
-
-**No Linux / macOS (Bash):**
 ```bash
 npm install
-cp .env.example .env.local
+npm run dev          # http://localhost:5173 (também acessível pelo celular na mesma rede)
 ```
 
-> **Nota sobre Execução Offline / Emulador**: Por padrão (`VITE_USE_FIREBASE_EMULATOR=true`), a aplicação utiliza o emulador local integrado de Auth e Firestore (validando em tempo real as regras de `firestore.rules`), funcionando 100% localmente sem exigir chaves externas.
+| Comando | O que faz |
+|---------|-----------|
+| `npm run build` | checa tipos e gera `dist/` |
+| `npm run preview` | serve o `dist/` |
+| `npm test` | testes do núcleo (rede, treino, simulações, estado) |
+| `npm run lint` | ESLint sem avisos |
+| `npm run smoke` | teste de fumaça no Chrome headless (precisa do `preview` rodando na porta 4173) |
 
-### 3. Iniciar o Servidor de Desenvolvimento
+## Firebase e Google Analytics (opcional)
 
-```bash
-npm run dev
-```
+Sem configuração o jogo salva tudo em `localStorage` e não baixa o SDK do Firebase.
+Para ligar a nuvem, copie `.env.example` para `.env.local` e preencha `VITE_FIREBASE_*`:
 
-Abra o navegador em `http://localhost:5173`.
+- **Auth anônimo + Firestore**: o progresso vai para `users/{uid}/saves/main` (regras em `firestore.rules`);
+- **Analytics (GA4)**: com `VITE_FIREBASE_MEASUREMENT_ID`, os eventos listados em
+  `src/services/AnalyticsService.ts` são enviados em produção.
 
----
+Deploy: `npm run deploy:hosting` (Firebase Hosting, pasta `dist`). O workflow em
+`.github/workflows/deploy.yml` roda lint, testes e build; **push na `main` publica em produção**.
 
-## 🧪 Como Executar os Testes, Cobertura e Lint
+## Para quem vai manter
 
-```bash
-# 1. Verificar padronização de código e tipagem (ESLint com 0 warnings)
-npm run lint
+Leia **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — mapa das pastas, regras de dependência
+e receitas ("como criar uma missão", "como criar uma skin", "como adicionar um som").
+Cada arquivo começa com um bloco `@module` explicando seu papel.
 
-# 2. Executar todas as 9 suítes de testes unitários e de integração (Vitest)
-npm test
+## O que mudou em relação ao original
 
-# 3. Executar testes com relatório de cobertura de código (94,35% em src/core/*)
-npm run test:coverage
-
-# 4. Executar o teste End-to-End (Playwright) completando a Fase 1 no navegador
-npm run test:e2e
-```
-
----
-
-## 📦 Build de Produção e Deploy no Firebase Hosting
-
-```bash
-# Gerar pacote otimizado de produção na pasta dist/
-npm run build
-
-# Servir localmente o pacote de produção gerado
-npm run preview
-```
-
-### Deploy Manual via Firebase CLI
-
-```bash
-# Ambiente de Desenvolvimento (neurobot-dev)
-npx firebase-tools use dev
-npx firebase-tools deploy --only hosting,firestore:rules
-
-# Ambiente de Produção (neurobot-prod)
-npx firebase-tools use prod
-npx firebase-tools deploy --only hosting,firestore:rules
-```
-
-### CI/CD Automatizado (GitHub Actions)
-O workflow [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) executa `npm ci`, `npm run lint`, `npm run test:coverage` e `npm run build` a cada *Push* ou *Pull Request*:
-- **Pull Requests**: gera automaticamente um canal de *Preview* no projeto `neurobot-dev` (`FIREBASE_SERVICE_ACCOUNT_NEUROBOT_DEV`).
-- **Push na `main`**: publica automaticamente no canal de produção (`live`) do projeto `neurobot-prod` (`FIREBASE_SERVICE_ACCOUNT_NEUROBOT_PROD`).
+- React, Pixi, React Flow, Recharts e TensorFlow.js saíram; o treino é backpropagation em TypeScript puro.
+- As 5 fases viraram 7 missões novas; ajuste manual de pesos, quiz/glossário, replay e
+  vínculo com conta Google **não** foram portados.
+- O emulador de Firestore embutido deu lugar ao SDK real, carregado sob demanda.
