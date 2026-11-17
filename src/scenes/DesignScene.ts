@@ -11,24 +11,29 @@
  *  - CABO     : arraste de um bloco até outro — ou toque na origem e depois no destino;
  *  - NEURÔNIO : toque num encaixe vazio (também funciona com a ferramenta CABO);
  *  - BORRACHA : toque num neurônio ou cabo;
- *  - AUTO     : monta a rede de referência da missão;
+ *  - AUTO     : (upgrade) liga tudo em tudo entre as camadas ocupadas;
  *  - DESFAZER : volta um passo · BOMBA: limpa tudo.
+ *
+ * O tamanho do tabuleiro vem da {@link Blueprint} (missão + upgrades). O
+ * medidor de CUSTO mostra cabos + neurônios contra o orçamento da 3ª estrela,
+ * e cada ação pode disparar uma dica de conceito ({@link tip}).
  *
  * A cena edita o {@link Board} salvo em `GameState` e nunca mexe em pesos:
  * quem cuida disso é a TrainScene.
  */
 import Phaser from 'phaser';
 import { analytics, audio, state } from '../app/services';
-import { Board, boardFromTopology, boardToTopology, emptyBoard, nodeColumn, slotId } from '../core/missions/board';
+import { Blueprint, Board, autoWire, boardToTopology, emptyBoard, nodeColumn, slotId } from '../core/missions/board';
 import { getMission } from '../core/missions/catalog';
 import { MissionDef } from '../core/missions/types';
-import { countHidden, validateTopology } from '../core/nn/network';
+import { countHidden, networkCost, validateTopology } from '../core/nn/network';
 import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
 import { NetworkView } from '../ui/NetworkView';
+import { celebrate, tip } from '../ui/Toast';
 import { burst } from '../ui/fx';
-import { C, body, regularPoly } from '../ui/theme';
+import { C, body, css, regularPoly, title } from '../ui/theme';
 import { addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
 
@@ -42,7 +47,10 @@ export class DesignScene extends BaseScene {
   protected music = 'design' as const;
 
   private mission!: MissionDef;
+  private bp!: Blueprint;
   private board!: Board;
+  private costText!: Phaser.GameObjects.Text;
+  private costHint!: Phaser.GameObjects.Text;
   private view!: NetworkView;
   private tool: Tool = 'cable';
   private toolButtons!: Record<Tool, NeonButton>;
@@ -63,6 +71,7 @@ export class DesignScene extends BaseScene {
 
   protected build(): void {
     const m = this.mission;
+    this.bp = state.blueprint(m.id);
     this.board = state.design(m.id).board;
     this.undoStack = [];
     this.dragFrom = this.armed = null;
@@ -72,12 +81,16 @@ export class DesignScene extends BaseScene {
     const barH = 96;
     const boardRect = { x: 16, y: top + 10, w: this.W - 32, h: this.H - top - barH - 78 };
     addPanel(this, boardRect, C.panelEdge, 0.55);
-    this.view = new NetworkView(this, m, this.board, boardRect, { showSlots: true, showHeaders: true, labelPad: 200 });
+    this.view = new NetworkView(this, this.bp, this.board, boardRect, { showSlots: true, showHeaders: true, labelPad: 200 });
+    if (m.skin === 'field') this.addDataPreview(boardRect.x + boardRect.w - 150, boardRect.y + boardRect.h - 150);
 
     // Faixa de dica com o mascote.
     const hintY = this.H - barH - 36;
     this.bot = new Robot(this, 56, hintY - 4, 0.42);
     this.hint = body(this, 100, hintY, '', 22, C.text).setOrigin(0, 0.5);
+    // Medidor de custo x orçamento (3ª estrela).
+    this.costText = title(this, this.W - 24, hintY - 10, '', 22, C.green).setOrigin(1, 0.5);
+    this.costHint = body(this, this.W - 24, hintY + 14, '', 16, C.dim).setOrigin(1, 0.5);
 
     this.buildHotbar(barH);
     this.bindPointer();
@@ -103,7 +116,7 @@ export class DesignScene extends BaseScene {
       eraser: add(t('design.tool.eraser'), C.orange, (g, c) => g.lineStyle(5, c).lineBetween(-12, -12, 12, 12).lineBetween(12, -12, -12, 12), () => this.setTool('eraser')),
     };
     x += 14;
-    add(t('design.tool.auto'), C.green, (g, c) => g.fillStyle(c).fillTriangle(-4, -16, -12, 4, 0, 2).fillTriangle(4, 16, 12, -4, 0, -2), () => this.autoWire());
+    add(t('design.tool.auto'), state.caps.autowire ? C.green : C.dim, (g, c) => g.fillStyle(c).fillTriangle(-4, -16, -12, 4, 0, 2).fillTriangle(4, 16, 12, -4, 0, -2), () => this.autoWire());
     add(t('design.tool.undo'), C.text, (g, c) => g.lineStyle(4, c).beginPath().arc(0, 2, 12, Math.PI, Math.PI * 2.6).strokePath().fillStyle(c).fillTriangle(-20, 2, -4, 2, -12, -10), () => this.undo());
     add(t('design.tool.clear'), C.red, (g, c) => g.fillStyle(c).fillCircle(-2, 4, 11).lineStyle(3, c).lineBetween(4, -6, 12, -15), () => this.clearAll());
 
@@ -208,8 +221,10 @@ export class DesignScene extends BaseScene {
   private placeNeuron(col: number, row: number): void {
     this.snapshot();
     this.board.hidden[col][row] = true;
+    state.bump('neurons_placed');
+    tip(this, col > 0 ? 'deep' : 'neuron', true);
     const p = this.view.posOf(slotId(col, row));
-    audio.sfx('place', PENTA[(this.mission.maxHiddenPerLayer - 1 - row + col * 2) % PENTA.length]);
+    audio.sfx('place', PENTA[(this.bp.slots - 1 - row + col * 2) % PENTA.length]);
     burst(this, p.x, p.y, C.violet, 12);
     this.popAt(p.x, p.y, C.violet);
     this.refresh(true);
@@ -238,8 +253,8 @@ export class DesignScene extends BaseScene {
   }
 
   private connect(a: string, b: string): void {
-    const ca = nodeColumn(this.mission, this.board, a);
-    const cb = nodeColumn(this.mission, this.board, b);
+    const ca = nodeColumn(this.bp, this.board, a);
+    const cb = nodeColumn(this.bp, this.board, b);
     if (ca === cb) return this.fail('design.hint.backwards');
     // O jogador pode arrastar em qualquer sentido: orientamos o cabo para a direita.
     const [from, to] = ca < cb ? [a, b] : [b, a];
@@ -249,6 +264,11 @@ export class DesignScene extends BaseScene {
     }
     this.snapshot();
     this.board.links.push([from, to]);
+    // Uma dica por ação, da mais específica para a mais geral.
+    if (this.mission.extraInputs?.includes(from)) tip(this, 'feature', true);
+    else if (Math.abs(cb - ca) > 1 && this.board.hidden.some((col) => col.some(Boolean))) tip(this, 'skip', true);
+    else if (/^h/.test(from) || /^h/.test(to)) tip(this, 'hidden', true);
+    else tip(this, 'cable', true);
     const pf = this.view.posOf(from);
     const pt = this.view.posOf(to);
     audio.sfx('connect', PENTA[this.board.links.length % PENTA.length]);
@@ -269,8 +289,10 @@ export class DesignScene extends BaseScene {
   }
 
   private autoWire(): void {
+    if (!state.caps.autowire) return this.fail('design.autoLocked');
     this.snapshot();
-    this.replaceBoard(boardFromTopology(this.mission, this.mission.idealTopology));
+    this.board.links = autoWire(this.bp, this.board);
+    tip(this, 'auto', true);
     audio.sfx('zap');
     this.cameras.main.flash(180, 57, 255, 136);
     this.refresh(true);
@@ -286,7 +308,8 @@ export class DesignScene extends BaseScene {
 
   private clearAll(): void {
     this.snapshot();
-    this.replaceBoard(emptyBoard(this.mission));
+    this.replaceBoard(emptyBoard(this.bp));
+    state.bump('bombs');
     audio.sfx('bomb');
     this.cameras.main.shake(260, 0.012);
     this.cameras.main.flash(200, 255, 51, 85);
@@ -317,11 +340,26 @@ export class DesignScene extends BaseScene {
   /** Recalcula validação/dica e, se `changed`, salva o tabuleiro (zerando o contador de treino). */
   private refresh(changed: boolean): void {
     if (changed) state.saveDesign(this.mission.id, { board: this.board, epochs: 0 });
-    const check = validateTopology(boardToTopology(this.mission, this.board));
+    const topo = boardToTopology(this.bp, this.board);
+    const check = validateTopology(topo);
     this.nextBtn.setEnabled(check.ok);
+
+    const cost = networkCost(topo);
+    const within = cost <= this.mission.budget;
+    this.costText.setText(t('design.cost', { a: cost, b: this.mission.budget })).setColor(css(within ? C.green : C.orange));
+    this.costHint.setText(t(within ? 'design.costOk' : 'design.costOver'));
+    if (changed) celebrate(this);
+
     if (check.ok) {
       this.setHint('design.hint.ok', 'happy');
-      if (changed) this.bot.hop();
+      if (changed) {
+        this.bot.hop();
+        const used = new Set(topo.links.map((l) => l[0]));
+        if (!within) tip(this, 'overbudget', true);
+        else if (this.mission.needsHidden && !topo.hidden.length) tip(this, 'linear', true);
+        else if (this.mission.inputs.some((id) => !used.has(id))) tip(this, 'unused', true);
+        else tip(this, 'budget', true);
+      }
     } else if (changed || !this.board.links.length) {
       this.setHint(this.board.links.length ? `design.hint.${check.issue}` : `design.hint.${this.tool}`, 'think');
     } else {
@@ -330,9 +368,22 @@ export class DesignScene extends BaseScene {
   }
 
   private toTrain(): void {
-    const topo = boardToTopology(this.mission, this.board);
+    const topo = boardToTopology(this.bp, this.board);
     analytics.track('design_done', { mission: this.mission.id, hidden: countHidden(topo), links: topo.links.length });
     this.go('Train', { missionId: this.mission.id });
+  }
+
+  /** Miniatura dos dados de treino das missões de campo (ciano = aliado, magenta = invasor). */
+  private addDataPreview(x: number, y: number): void {
+    const size = 136;
+    const g = this.add.graphics();
+    g.fillStyle(C.bg, 0.85).fillRect(x, y, size, size).lineStyle(2, C.panelEdge).strokeRect(x, y, size, size);
+    for (const p of this.mission.train) {
+      const px = x + ((p.in.x + 1) / 2) * size;
+      const py = y + ((1 - p.in.y) / 2) * size;
+      g.fillStyle(p.targets[0] ? C.magenta : C.cyan, 0.9).fillRect(Phaser.Math.Clamp(px, x + 2, x + size - 4) - 2, Phaser.Math.Clamp(py, y + 2, y + size - 4) - 2, 5, 5);
+    }
+    body(this, x + size / 2, y - 6, t('design.data'), 15, C.dim).setOrigin(0.5, 1);
   }
 
   update(time: number): void {

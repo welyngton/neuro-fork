@@ -51,12 +51,22 @@ export interface Hyper {
   learningRate: number;
   epochs: number;
   activation: Activation;
+  /** Regularização L2 (weight decay): puxa os pesos para zero a cada época. 0 = desligada. */
+  l2?: number;
+  /** Dropout: fração dos neurônios ocultos desligada ao acaso em cada exemplo de treino. 0 = desligado. */
+  dropout?: number;
 }
 
-/** Estado interno do otimizador (momentum). Crie com {@link createMomentum}. */
+/** Estado interno do otimizador Adam (médias móveis do gradiente). Crie com {@link createMomentum}. */
 export interface Momentum {
+  /** Média do gradiente (1º momento) por peso e por bias. */
   w: Record<string, number>;
   b: Record<string, number>;
+  /** Média do gradiente ao quadrado (2º momento). */
+  vw: Record<string, number>;
+  vb: Record<string, number>;
+  /** Passos já dados (para a correção de viés). */
+  t: number;
 }
 
 /** Resultado de um forward pass: saída final e o estado de cada neurônio (para inspeção visual). */
@@ -73,7 +83,15 @@ export function linkKey(from: string, to: string): string {
   return `${from}->${to}`;
 }
 
-/** Total de neurônios ocultos do desenho (usado na pontuação por "rede enxuta"). */
+/**
+ * Custo do desenho = nº de cabos + nº de neurônios ocultos (uma aproximação do
+ * número de parâmetros). É o que a 3ª estrela compara com o orçamento da missão.
+ */
+export function networkCost(t: Topology): number {
+  return t.links.length + countHidden(t);
+}
+
+/** Total de neurônios ocultos do desenho. */
 export function countHidden(t: Topology): number {
   return t.hidden.reduce((n, layer) => n + layer.length, 0);
 }
@@ -158,12 +176,14 @@ function incoming(t: Topology): Map<string, string[]> {
  * Forward pass: propaga as leituras dos sensores até as saídas.
  * @param input leituras por id de sensor (ids ausentes valem 0).
  * @param hiddenFn ativação dos neurônios ocultos (a saída é sempre sigmoide, em [0,1]).
+ * @param mask multiplicador por neurônio oculto (usado pelo dropout no treino; omita na inferência).
  */
 export function forward(
   t: Topology,
   p: Params,
   input: Record<string, number>,
   hiddenFn: Activation,
+  mask?: Record<string, number>,
 ): ForwardResult {
   const inc = incoming(t);
   const values: Record<string, number> = {};
@@ -174,7 +194,7 @@ export function forward(
     let z = p.biases[id] ?? 0;
     for (const from of inc.get(id) ?? []) z += (values[from] ?? 0) * (p.weights[linkKey(from, id)] ?? 0);
     sums[id] = z;
-    values[id] = activate(z, fn);
+    values[id] = activate(z, fn) * (mask?.[id] ?? 1);
   };
   for (const layer of t.hidden) for (const id of layer) run(id, hiddenFn);
   const outputs: Record<string, number> = {};
@@ -236,20 +256,23 @@ export function datasetAccuracy(t: Topology, p: Params, data: Sample[], hiddenFn
 }
 
 export function createMomentum(): Momentum {
-  return { w: {}, b: {} };
+  return { w: {}, b: {}, vw: {}, vb: {}, t: 0 };
 }
 
 /**
- * Executa UMA época de backpropagation (gradiente em lote + momentum 0.9).
+ * Executa UMA época de backpropagation (gradiente em lote + otimizador Adam).
  * Não altera `p`: devolve novos parâmetros e a perda (MSE) medida antes do ajuste.
  * Funciona para qualquer grafo "para frente", inclusive com cabos que pulam camadas.
+ *
+ * Extras opcionais em `hyper`: `l2` (weight decay) e `dropout` (precisa de `rng`).
  */
 export function trainEpoch(
   t: Topology,
   p: Params,
   data: Sample[],
-  hyper: Pick<Hyper, 'learningRate' | 'activation'>,
+  hyper: Pick<Hyper, 'learningRate' | 'activation' | 'l2' | 'dropout'>,
   mom: Momentum,
+  rng: () => number = Math.random,
 ): { params: Params; loss: number } {
   const gw: Record<string, number> = {};
   const gb: Record<string, number> = {};
@@ -265,8 +288,16 @@ export function trainEpoch(
 
   let total = 0;
   let count = 0;
+  const drop = Math.min(0.8, hyper.dropout ?? 0);
+  const hiddenIds = t.hidden.flat();
   for (const s of data) {
-    const r = forward(t, p, toInputMap(t, s.inputs), hyper.activation);
+    // Dropout "invertido": desliga neurônios ao acaso e compensa os que ficaram.
+    let mask: Record<string, number> | undefined;
+    if (drop > 0) {
+      mask = {};
+      for (const id of hiddenIds) mask[id] = rng() < drop ? 0 : 1 / (1 - drop);
+    }
+    const r = forward(t, p, toInputMap(t, s.inputs), hyper.activation, mask);
     const delta: Record<string, number> = {};
     t.outputs.forEach((id, i) => {
       const a = r.values[id];
@@ -279,27 +310,36 @@ export function trainEpoch(
       for (const id of t.hidden[l]) {
         let sum = 0;
         for (const to of out.get(id) ?? []) sum += (p.weights[linkKey(id, to)] ?? 0) * (delta[to] ?? 0);
-        delta[id] = sum * activateDeriv(r.sums[id], r.values[id], hyper.activation);
+        const m = mask?.[id] ?? 1;
+        // Com máscara, `values` já vem multiplicado; a derivada usa a ativação "crua".
+        const raw = m ? r.values[id] / m : activate(r.sums[id], hyper.activation);
+        delta[id] = sum * m * activateDeriv(r.sums[id], raw, hyper.activation);
       }
     }
     for (const [a, b] of t.links) gw[linkKey(a, b)] += (delta[b] ?? 0) * (r.values[a] ?? 0);
     for (const id of nodes) gb[id] += delta[id] ?? 0;
   }
 
+  // Adam: passo proporcional à média do gradiente dividida pela sua "agitação".
+  // Converge bem mais rápido e de forma mais estável que o gradiente puro.
   const n = Math.max(1, data.length);
-  const mu = 0.9;
+  const b1 = 0.9;
+  const b2 = 0.999;
+  mom.t++;
+  const c1 = 1 - Math.pow(b1, mom.t);
+  const c2 = 1 - Math.pow(b2, mom.t);
+  const step = (g: number, key: string, m: Record<string, number>, v: Record<string, number>) => {
+    m[key] = b1 * (m[key] ?? 0) + (1 - b1) * g;
+    v[key] = b2 * (v[key] ?? 0) + (1 - b2) * g * g;
+    return (hyper.learningRate * (m[key] / c1)) / (Math.sqrt(v[key] / c2) + 1e-8);
+  };
   const weights: Record<string, number> = {};
   const biases: Record<string, number> = {};
   for (const k of Object.keys(gw)) {
-    const v = mu * (mom.w[k] ?? 0) - hyper.learningRate * (gw[k] / n);
-    mom.w[k] = v;
-    weights[k] = (p.weights[k] ?? 0) + v;
+    const w = p.weights[k] ?? 0;
+    weights[k] = w - step(gw[k] / n + (hyper.l2 ?? 0) * w, k, mom.w, mom.vw);
   }
-  for (const id of nodes) {
-    const v = mu * (mom.b[id] ?? 0) - hyper.learningRate * (gb[id] / n);
-    mom.b[id] = v;
-    biases[id] = (p.biases[id] ?? 0) + v;
-  }
+  for (const id of nodes) biases[id] = (p.biases[id] ?? 0) - step(gb[id] / n, id, mom.b, mom.vb);
   return { params: { weights, biases }, loss: count ? total / count : 1 };
 }
 

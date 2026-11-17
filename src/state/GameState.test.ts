@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { boardFromTopology, boardToTopology, emptyBoard } from '../core/missions/board';
+import { autoWire, blueprintFor, boardFromTopology, boardToTopology, emptyBoard } from '../core/missions/board';
+import { ACHIEVEMENTS } from '../core/progression/achievements';
+import { dealCards, modsOf } from '../core/progression/cards';
+import { capsFor } from '../core/progression/upgrades';
 import { getMission } from '../core/missions/catalog';
 import { GameState } from './GameState';
 
@@ -19,8 +22,10 @@ describe('GameState', () => {
     expect(s.stars('bercario')).toBe(2);
     expect(new GameState(storage).isUnlocked('triagem')).toBe(true);
     s.recordResult('triagem', 1, false);
-    s.recordResult('corredor', 1, false);
-    expect(s.isUnlocked('labirinto')).toBe(false); // ainda falta o XOR
+    s.recordResult('fronteira', 1, false);
+    s.recordResult('xor', 1, false);
+    s.recordResult('quadrantes', 1, false);
+    expect(s.isUnlocked('captcha')).toBe(false); // ainda falta o labirinto
     s.reset();
     expect(s.totalStars).toBe(0);
   });
@@ -33,15 +38,64 @@ describe('GameState', () => {
     a.merge(b.snapshot());
     expect(a.stars('bercario')).toBe(3);
   });
+
+  it('loja: gasta estrelas, amplia o tabuleiro e não deixa comprar sem saldo', () => {
+    const s = new GameState(memoryStorage());
+    expect(s.buy('slots')).toBe(false);
+    s.recordResult('bercario', 3, false);
+    expect(s.balance).toBe(3);
+    expect(s.buy('slots')).toBe(true);
+    expect(s.buy('slots')).toBe(false);
+    expect(s.balance).toBe(1);
+    expect(s.design('xor').board.hidden[0].length).toBe(6);
+    expect(s.buy('layer')).toBe(false);
+  });
+
+  it('conquistas: anuncia cada nível uma única vez', () => {
+    const s = new GameState(memoryStorage());
+    expect(s.claimAchievements()).toEqual([]);
+    s.bump('neurons_placed');
+    expect(s.claimAchievements()).toEqual([{ id: 'primeiro_neuronio', level: 1 }]);
+    expect(s.claimAchievements()).toEqual([]);
+    s.bump('neurons_placed', 30);
+    expect(s.claimAchievements()).toEqual([{ id: 'primeiro_neuronio', level: 2 }]);
+  });
 });
 
 describe('board', () => {
   it('converte tabuleiro <-> topologia e descarta cabos inválidos', () => {
     const m = getMission('xor');
-    const board = boardFromTopology(m, m.idealTopology);
-    expect(boardToTopology(m, board)).toEqual(m.idealTopology);
-    const b2 = emptyBoard(m);
+    const bp = blueprintFor(m, capsFor([]));
+    const board = boardFromTopology(bp, m.reference.topology);
+    expect(boardToTopology(bp, board)).toEqual(m.reference.topology);
+    const b2 = emptyBoard(bp);
     b2.links = [['luz_a', 'ativar'], ['ativar', 'luz_a'], ['luz_a', 'h0_0']];
-    expect(boardToTopology(m, b2).links).toEqual([['luz_a', 'ativar']]);
+    expect(boardToTopology(bp, b2).links).toEqual([['luz_a', 'ativar']]);
+  });
+
+  it('AUTO liga tudo em tudo e os sensores derivados só aparecem com o upgrade', () => {
+    const m = getMission('ilha');
+    expect(blueprintFor(m, capsFor([])).inputs).toEqual(['x', 'y']);
+    const bp = blueprintFor(m, capsFor(['features']));
+    expect(bp.inputs).toContain('x2');
+    const board = emptyBoard(bp);
+    board.hidden[0][0] = board.hidden[0][1] = true;
+    expect(autoWire(bp, board).length).toBe(5 * 2 + 2);
+  });
+});
+
+describe('cartas', () => {
+  it('a mesa traz duas táticas diferentes e uma carta do destino', () => {
+    for (let i = 0; i < 30; i++) {
+      const d = dealCards();
+      expect(d.tactics[0].kind).toBe('tatica');
+      expect(d.tactics[0]).not.toBe(d.tactics[1]);
+      expect(['sorte', 'azar']).toContain(d.fate.kind);
+    }
+    expect(modsOf(undefined).lrMul).toBe(1);
+  });
+
+  it('há pelo menos 20 conquistas', () => {
+    expect(ACHIEVEMENTS.length).toBeGreaterThanOrEqual(20);
   });
 });

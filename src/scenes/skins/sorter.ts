@@ -27,7 +27,8 @@ function makeItem(scene: Phaser.Scene, v: SorterVisual): Phaser.GameObjects.Cont
     });
   } else {
     const r = v.big ? 42 : 24;
-    const color = v.shape === 'circle' ? C.cyan : v.shape === 'triangle' ? C.yellow : C.magenta;
+    // Na Triagem a cor é um sensor que não tem nada a ver com a regra.
+    const color = v.alt !== undefined ? (v.alt ? C.orange : C.green) : v.shape === 'circle' ? C.cyan : v.shape === 'triangle' ? C.yellow : C.magenta;
     g.fillStyle(color, 0.3).lineStyle(4, color);
     if (v.shape === 'circle') g.fillCircle(0, 0, r).strokeCircle(0, 0, r);
     else {

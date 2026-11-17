@@ -9,12 +9,20 @@ import { ClassCase } from '../simulation/classification';
 import { MazeConfig } from '../simulation/maze';
 
 /** Skin = "como a simulação é desenhada". Cada valor tem um arquivo em `scenes/skins`. */
-export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing';
+export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing' | 'field';
+
+/** Um exemplo rotulado com as leituras por NOME de sensor (inclui sensores derivados). */
+export interface DataPoint {
+  in: Record<string, number>;
+  targets: number[];
+}
 
 /** Dados visuais de um item da esteira (skin `sorter`). */
 export interface SorterVisual {
   shape: 'circle' | 'triangle' | 'square' | 'chip';
   big?: boolean;
+  /** Cor alternativa (sensor "cor" da Triagem). */
+  alt?: boolean;
   /** Para `chip`: estado dos dois LEDs. */
   a?: number;
   b?: number;
@@ -34,6 +42,12 @@ export interface TuringVisual {
   n: number;
 }
 
+/** Ponto do campo 2D (skin `field`), em coordenadas -1..1. */
+export interface FieldVisual {
+  x: number;
+  y: number;
+}
+
 export interface MissionDef {
   /** Id estável — usado em saves, analytics e chaves de tradução (`mission.<id>.*`). */
   id: string;
@@ -42,28 +56,39 @@ export interface MissionDef {
   /** Missões que precisam estar concluídas para liberar esta. */
   requires: string[];
   skin: SkinId;
-  /** Sensores disponíveis (ids traduzidos em `io.<id>`). */
+  /** Sensores sempre disponíveis (ids traduzidos em `io.<id>`). */
   inputs: string[];
+  /** Sensores derivados, liberados pelo upgrade "features" (ex.: x², y², x·y). */
+  extraInputs?: string[];
   /** Ações disponíveis. */
   outputs: string[];
-  /** Quantas colunas de neurônios ocultos o editor oferece. */
-  maxHiddenLayers: number;
-  /** Quantos encaixes por coluna oculta. */
-  maxHiddenPerLayer: number;
-  /** Limite de neurônios ocultos para a 3ª estrela. */
-  idealHidden: number;
-  /** Perda máxima para a 2ª estrela. */
+  /** Perda máxima (na validação, se houver) para a 2ª estrela. */
   targetLoss: number;
+  /** Custo máximo do desenho (cabos + neurônios ocultos) para a 3ª estrela. */
+  budget: number;
   /** Hiperparâmetros iniciais sugeridos. */
   defaults: Hyper;
-  /** Exemplos rotulados usados no treino. */
-  dataset: Sample[];
-  /** Rede de referência que resolve a missão (usada nos testes e no botão AUTO). */
-  idealTopology: Topology;
+  /** Exemplos de TREINO (podem conter ruído e rótulos trocados). */
+  train: DataPoint[];
+  /** Exemplos de VALIDAÇÃO, nunca vistos no treino. Ausente = valida no próprio treino. */
+  validation?: DataPoint[];
+  /**
+   * Solução de referência: prova (nos testes) que a missão tem saída dentro do
+   * orçamento. `needs` lista os upgrades que ela pressupõe; `earlyStop` indica
+   * que ela conta com a parada antecipada (melhores pesos na validação).
+   */
+  reference: { topology: Topology; hyper?: Partial<Hyper>; earlyStop?: boolean; needs?: string[] };
+  /** `true` = ligar sensores direto nas ações NÃO resolve (os testes conferem). */
+  needsHidden?: boolean;
   /** Casos da simulação (skins de classificação). */
   cases?: ClassCase[];
   /** Fração mínima de acertos (padrão 1). */
   passRatio?: number;
   /** Configuração do labirinto (skin `maze`). */
   maze?: MazeConfig;
+}
+
+/** Converte pontos nomeados em amostras na ordem dos sensores da rede. */
+export function toSamples(t: Topology, points: DataPoint[]): Sample[] {
+  return points.map((p) => ({ inputs: t.inputs.map((id) => p.in[id] ?? 0), targets: p.targets }));
 }

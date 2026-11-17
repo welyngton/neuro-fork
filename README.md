@@ -19,17 +19,39 @@ MENU (opções + mapa de missões)
             └────────────┴───────────────┘   (pode voltar a qualquer momento)
 ```
 
-| # | Missão | Simulação | Conceito | Rede de referência |
-|---|--------|-----------|----------|--------------------|
-| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único | 1 → 1 |
-| 2 | Triagem | só quadrado grande vai no buraco B | bias, porta E | 2 → 1 |
-| 3 | Corredor de Dados | atravessar um corredor sem bater | várias saídas (argmax) | 3 → 3 |
-| 4 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta | 2 → 2 → 1 |
-| 5 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 4 → 4 |
-| 6 | CAPTCHA | marcar os quadros com triângulos | fronteira não linear, sensor inútil | 2 → 2 → 1 |
-| 7 | Teste de Turing | responder à juíza como um humano | multiclasse — zera o jogo | 3 → 4 |
+| # | Missão | Simulação | Conceito | Solução de referência (custo) |
+|---|--------|-----------|----------|-------------------------------|
+| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único | 1 → 1 (1) |
+| 2 | Triagem | só quadrado grande vai no buraco B | porta E, sensor inútil | 2 cabos, sem a "cor" (2) |
+| 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação | x, y → 1 (2) |
+| 4 | Corredor de Dados | atravessar um corredor sem bater | argmax, escolha de sensores | 5 cabos (5) |
+| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta | 2 → 2 → 1 (8) |
+| 6 | Quadrantes | invasores em cantos opostos | XOR contínuo | 2 → 3 → 1 (12) |
+| 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 10 cabos (10) |
+| 8 | Ilha | invasores numa ilha central | fronteira fechada / atributos | 2 → 4 → 1 (16) ou x², y² (2) |
+| 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído | cantos → 2 → 1 (6) |
+| 10 | Duas Luas | frotas em meia-lua entrelaçadas | overfitting, parada antecipada | 2 → 4 → 1 (16) |
+| 11 | Alvo | invasores em anel | engenharia de atributos | x², y² → 2 → 1 (8) |
+| 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa — zera o jogo | 3 → 3 → 4 (24) |
 
-Estrelas: ★ venceu · ★★ perda final abaixo da meta · ★★★ rede enxuta (neurônios ocultos ≤ ideal).
+**Estrelas:** ★ venceu · ★★ perda de validação abaixo da meta · ★★★ custo do desenho (cabos +
+neurônios ocultos) dentro do orçamento. Ligar tudo em tudo nunca dá 3 estrelas: ou não resolve
+(missões que exigem camada oculta) ou estoura o orçamento. Os testes conferem isso missão a missão.
+
+## Progressão
+
+- **Loja**: as estrelas compram upgrades — mais encaixes, segunda camada, auto-fiação, sensores
+  derivados (x², y², x·y), rodadas de 800 épocas, outras ativações, parada antecipada, L2 e dropout.
+- **Cartas de treino** (opcionais): antes de cada rodada, duas táticas à vista (decisão) e uma
+  carta do destino virada (sorte ou azar). Os nomes vêm do baralho dos slides do prof. Peng Yaohao:
+  tunagem, GatoNet/dropout, overfit, early stop, stack overflow, transfer learning.
+- **Dicas de conceito**: avisos curtos explicam o que acabou de acontecer (peso, camada oculta,
+  navalha de Occam, overfitting...). Mais frequentes no Design, discretos no Treino e na Simulação.
+- **Lentes do treino**: PERDA (treino x validação), FRONTEIRA (o que a rede responde em cada ponto
+  do plano) e ESPAÇO OCULTO (os exemplos nas coordenadas dos neurônios ocultos; com 3 eixos, em 3D).
+- **Avatar**: 5 modelos (incluindo a GatoNet) e 6 cores liberados pelo total de estrelas; o nível
+  do robô sobe sozinho e acrescenta enfeites.
+- **Conquistas**: 26, com níveis bronze/prata/ouro.
 
 ## Rodando
 
@@ -87,6 +109,5 @@ Cada arquivo começa com um bloco `@module` explicando seu papel.
 ## O que mudou em relação ao original
 
 - React, Pixi, React Flow, Recharts e TensorFlow.js saíram; o treino é backpropagation em TypeScript puro.
-- As 5 fases viraram 7 missões novas; ajuste manual de pesos, quiz/glossário, replay e
-  vínculo com conta Google **não** foram portados.
+- As 5 fases viraram 12 missões novas; ajuste manual de pesos, quiz/glossário e replay **não** foram portados.
 - O emulador de Firestore embutido deu lugar ao SDK real; o login anônimo deu lugar ao login com Google.

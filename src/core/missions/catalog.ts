@@ -1,18 +1,24 @@
 /**
  * @module core/missions/catalog
  *
- * Catálogo das missões, na ordem de dificuldade — do "brinquedo de bebê"
+ * Catálogo das 12 missões, na ordem de dificuldade — do "brinquedo de bebê"
  * (encaixar formas) até zerar o jogo no Teste de Turing.
  *
- * Convenções:
+ * Princípios de dificuldade (conferidos em `core.test.ts`):
+ *  - toda missão tem uma solução de referência DENTRO do orçamento;
+ *  - nas missões `needsHidden`, ligar sensores direto nas ações não vence;
+ *  - nas demais, ligar TUDO em tudo vence mas estoura o orçamento: a 3ª estrela
+ *    exige escolher quais sensores importam (seleção de atributos).
+ *
+ * Convenções de dados:
  *  - `cantos` = número de lados da forma ÷ 3 (círculo 0 · triângulo 1 · quadrado 1,33 · hexágono 2);
- *  - os demais sensores valem 0 ou 1;
+ *  - sensores binários valem 0 ou 1; `x`, `y` e `tom` variam de -1 a 1;
  *  - `targets` com 1 coluna = classe binária; com N colunas = one-hot da ação correta.
  */
-import { Sample, Topology } from '../nn/network';
+import { Topology, createRng } from '../nn/network';
 import { ClassCase } from '../simulation/classification';
-import { createRng } from '../nn/network';
-import { CaptchaVisual, MissionDef, SorterVisual, TuringVisual } from './types';
+import { FIELD_EXTRA, FieldShape, makeField } from './datasets';
+import { CaptchaVisual, DataPoint, FieldVisual, MissionDef, SorterVisual, TuringVisual } from './types';
 
 /** Monta uma rede totalmente conectada camada a camada. `hiddenSizes` = neurônios por camada oculta. */
 export function fullyConnected(inputs: string[], hiddenSizes: number[], outputs: string[]): Topology {
@@ -23,8 +29,21 @@ export function fullyConnected(inputs: string[], hiddenSizes: number[], outputs:
   return { inputs, hidden, outputs, links };
 }
 
+/** Rede sem camada oculta com cabos escolhidos a dedo: `wires[ação] = sensores ligados nela`. */
+function sparse(inputs: string[], outputs: string[], wires: Record<string, string[]>): Topology {
+  const links: [string, string][] = [];
+  for (const out of outputs) for (const from of wires[out] ?? []) links.push([from, out]);
+  return { inputs, hidden: [], outputs, links };
+}
+
+/** Rede densa que usa só ALGUNS sensores (os demais ficam sem cabo). */
+function denseFrom(inputs: string[], used: string[], hiddenSizes: number[], outputs: string[]): Topology {
+  return { ...fullyConnected(used, hiddenSizes, outputs), inputs };
+}
+
 const oneHot = (i: number, n: number) => Array.from({ length: n }, (_, k) => (k === i ? 1 : 0));
 const SIDES: Record<string, number> = { circle: 0, triangle: 3, square: 4 };
+const point = (inp: Record<string, number>, targets: number[]): DataPoint => ({ in: inp, targets });
 
 /* ------------------------------------------------------------------ 1. Berçário */
 const bercarioItems: SorterVisual['shape'][] = ['circle', 'square', 'triangle', 'circle', 'square', 'circle'];
@@ -34,24 +53,19 @@ const bercarioCases: ClassCase[] = bercarioItems.map((shape) => ({
   visual: { shape, big: true } satisfies SorterVisual,
 }));
 
-/* ------------------------------------------------------------------ 2. Triagem (AND) */
-const triagemCases: ClassCase[] = (
-  [
-    ['square', 1], ['circle', 1], ['square', 0], ['circle', 0], ['square', 1], ['square', 0], ['circle', 1], ['square', 1],
-  ] as [SorterVisual['shape'], number][]
-).map(([shape, big]) => ({
-  inputs: { cantos: SIDES[shape] / 3, grande: big },
-  expected: shape === 'square' && big ? 1 : 0,
-  visual: { shape, big: !!big } satisfies SorterVisual,
-}));
-const triagemData: Sample[] = [
-  { inputs: [0, 0], targets: [0] },
-  { inputs: [0, 1], targets: [0] },
-  { inputs: [4 / 3, 0], targets: [0] },
-  { inputs: [4 / 3, 1], targets: [1] },
+/* ------------------------------------------------------------------ 2. Triagem (E lógico + sensor inútil) */
+const triagemItems: [SorterVisual['shape'], number, number][] = [
+  ['square', 1, 0], ['circle', 1, 1], ['square', 0, 1], ['circle', 0, 0], ['square', 1, 1], ['square', 0, 0], ['circle', 1, 0], ['square', 1, 0],
 ];
+const triagemCases: ClassCase[] = triagemItems.map(([shape, big, cor]) => ({
+  inputs: { cantos: SIDES[shape] / 3, grande: big, cor },
+  expected: shape === 'square' && big ? 1 : 0,
+  visual: { shape, big: !!big, alt: !!cor } satisfies SorterVisual,
+}));
+const triagemTrain: DataPoint[] = [];
+for (const c of [0, 4 / 3]) for (const g of [0, 1]) for (const cor of [0, 1]) triagemTrain.push(point({ cantos: c, grande: g, cor }, [c && g ? 1 : 0]));
 
-/* ------------------------------------------------------------------ 4. XOR */
+/* ------------------------------------------------------------------ 5. XOR */
 const xorPairs: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1], [1, 1], [0, 0], [0, 1], [1, 0]];
 const xorCases: ClassCase[] = xorPairs.map(([a, b]) => ({
   inputs: { luz_a: a, luz_b: b },
@@ -59,22 +73,26 @@ const xorCases: ClassCase[] = xorPairs.map(([a, b]) => ({
   visual: { shape: 'chip', a, b } satisfies SorterVisual,
 }));
 
-/* ------------------------------------------------------------------ 3 e 5. Labirintos */
-const wallPolicy: Sample[] = [];
+/* ------------------------------------------------------------------ 4 e 7. Labirintos */
+const WALL_IN = ['parede_frente', 'parede_esq', 'parede_dir'];
+const WALL_OUT = ['andar', 'virar_esq', 'virar_dir'];
+const wallTrain: DataPoint[] = [];
 for (let m = 0; m < 8; m++) {
   const [f, l, r] = [(m >> 2) & 1, (m >> 1) & 1, m & 1];
   // Frente livre -> andar; senão esquerda livre -> virar à esquerda; senão -> virar à direita.
-  wallPolicy.push({ inputs: [f, l, r], targets: oneHot(!f ? 0 : !l ? 1 : 2, 3) });
+  wallTrain.push(point({ parede_frente: f, parede_esq: l, parede_dir: r }, oneHot(!f ? 0 : !l ? 1 : 2, 3)));
 }
-const beaconPolicy: Sample[] = [];
+const BEACON_IN = ['farol_frente', 'farol_esq', 'farol_dir', 'firewall_frente'];
+const BEACON_OUT = ['andar', 'virar_esq', 'virar_dir', 'hackear'];
+const beaconTrain: DataPoint[] = [];
 for (let m = 0; m < 16; m++) {
   const [f, l, r, fw] = [(m >> 3) & 1, (m >> 2) & 1, (m >> 1) & 1, m & 1];
   // Firewall no caminho -> hackear; farol à frente -> andar; senão segue o farol lateral.
   const act = f && fw ? 3 : f ? 0 : l ? 1 : r ? 2 : 1;
-  beaconPolicy.push({ inputs: [f, l, r, fw], targets: oneHot(act, 4) });
+  beaconTrain.push(point({ farol_frente: f, farol_esq: l, farol_dir: r, firewall_frente: fw }, oneHot(act, 4)));
 }
 
-/* ------------------------------------------------------------------ 6. CAPTCHA */
+/* ------------------------------------------------------------------ 9. CAPTCHA */
 function buildCaptcha(): ClassCase[] {
   const rng = createRng(7);
   const cases: ClassCase[] = [];
@@ -100,84 +118,120 @@ function buildCaptcha(): ClassCase[] {
   }
   return cases;
 }
-const captchaData: Sample[] = [0, 3, 5, 6].flatMap((s) =>
-  [0, 0.5, 1].map((noise) => ({ inputs: [s / 3, noise], targets: [s === 3 ? 1 : 0] })),
+const captchaTrain: DataPoint[] = [0, 3, 5, 6].flatMap((s) =>
+  [0, 0.5, 1].map((noise) => point({ cantos: s / 3, ruido: noise }, [s === 3 ? 1 : 0])),
 );
 
-/* ------------------------------------------------------------------ 7. Teste de Turing */
-// [saudacao, pergunta, emocao] por fala do juiz (textos em `turing.q{n}`).
-const turingFeatures: [number, number, number][] = [
-  [1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0], [0, 1, 0], [1, 0, 1], [0, 1, 1],
+/* ------------------------------------------------------------------ Campos 2D */
+function fieldMission(shape: FieldShape, seed: number) {
+  const data = makeField(shape, seed);
+  const cases: ClassCase[] = data.validation.map((p) => ({
+    inputs: p.in,
+    expected: p.targets[0],
+    visual: { x: p.in.x, y: p.in.y } satisfies FieldVisual,
+  }));
+  return { ...data, cases };
+}
+const FIELD_IN = ['x', 'y'];
+const fronteira = fieldMission('fronteira', 11);
+const quadrantes = fieldMission('quadrantes', 22);
+const ilha = fieldMission('ilha', 33);
+const luas = fieldMission('luas', 44);
+const alvo = fieldMission('alvo', 55);
+
+/* ------------------------------------------------------------------ 12. Teste de Turing */
+const TURING_IN = ['saudacao', 'pergunta', 'tom'];
+const TURING_OUT = ['cumprimentar', 'responder', 'consolar', 'brincar'];
+/**
+ * Regra do bom papo. `tom` vai de -1 (muito negativo) a +1 (muito positivo):
+ * saudação -> cumprimentar; tom EXAGERADO para qualquer lado é ironia -> brincar;
+ * tom negativo moderado -> consolar; o resto -> responder.
+ * "Brincar" ocupa as duas pontas do eixo: nenhuma reta separa isso.
+ */
+export const turingRule = (s: number, tom: number) => (s ? 0 : Math.abs(tom) >= 0.7 ? 3 : tom <= -0.25 ? 2 : 1);
+// [saudacao, pergunta, tom] por fala da juíza (textos em `turing.q{n}`).
+const turingLines: [number, number, number][] = [
+  [1, 0, 0.2], [0, 1, 0], [0, 0, -0.4], [0, 0, -1], [1, 1, 0.3], [0, 1, 0.1], [0, 1, 1], [0, 0, -0.3], [1, 0, 0.5], [0, 1, 0],
 ];
-/** Regra do bom papo: saudação -> cumprimentar; pergunta com emoção -> brincar; pergunta -> responder; emoção -> consolar. */
-const turingRule = (s: number, p: number, e: number) => (s ? 0 : p && e ? 3 : p ? 1 : 2);
-const turingCases: ClassCase[] = turingFeatures.map(([s, p, e], n) => ({
-  inputs: { saudacao: s, pergunta: p, emocao: e },
-  expected: turingRule(s, p, e),
+const turingCases: ClassCase[] = turingLines.map(([s, p, tom], n) => ({
+  inputs: { saudacao: s, pergunta: p, tom },
+  expected: turingRule(s, tom),
   visual: { n } satisfies TuringVisual,
 }));
-const turingData: Sample[] = [];
-for (let m = 1; m < 8; m++) {
-  const [s, p, e] = [(m >> 2) & 1, (m >> 1) & 1, m & 1];
-  turingData.push({ inputs: [s, p, e], targets: oneHot(turingRule(s, p, e), 4) });
+const turingTrain: DataPoint[] = [];
+for (const p of [0, 1]) {
+  for (const tom of [-1, -0.5, 0, 0.5, 1]) turingTrain.push(point({ saudacao: 1, pergunta: p, tom }, oneHot(0, 4)));
+  for (const tom of [-1, -0.85, -0.7, -0.55, -0.4, -0.25, -0.1, 0, 0.15, 0.3, 0.5, 0.7, 0.85, 1]) {
+    turingTrain.push(point({ saudacao: 0, pergunta: p, tom }, oneHot(turingRule(0, tom), 4)));
+  }
 }
-
-const WALL_IN = ['parede_frente', 'parede_esq', 'parede_dir'];
-const BEACON_IN = ['farol_frente', 'farol_esq', 'farol_dir', 'firewall_frente'];
-const TURING_OUT = ['cumprimentar', 'responder', 'consolar', 'brincar'];
 
 /** Todas as missões, em ordem de progressão. */
 export const MISSIONS: MissionDef[] = [
   {
     id: 'bercario',
-    pos: { x: 0.07, y: 0.74 },
+    pos: { x: 0.05, y: 0.8 },
     requires: [],
     skin: 'sorter',
     inputs: ['cantos'],
     outputs: ['buraco_b'],
-    maxHiddenLayers: 1,
-    maxHiddenPerLayer: 2,
-    idealHidden: 0,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 100, activation: 'tanh' },
-    dataset: [
-      { inputs: [0], targets: [0] },
-      { inputs: [1], targets: [1] },
-      { inputs: [4 / 3], targets: [1] },
-    ],
-    idealTopology: fullyConnected(['cantos'], [], ['buraco_b']),
+    budget: 1,
+    defaults: { learningRate: 0.1, epochs: 100, activation: 'tanh' },
+    train: [point({ cantos: 0 }, [0]), point({ cantos: 1 }, [1]), point({ cantos: 4 / 3 }, [1])],
+    reference: { topology: fullyConnected(['cantos'], [], ['buraco_b']) },
     cases: bercarioCases,
   },
   {
     id: 'triagem',
-    pos: { x: 0.23, y: 0.36 },
+    pos: { x: 0.13, y: 0.38 },
     requires: ['bercario'],
     skin: 'sorter',
-    inputs: ['cantos', 'grande'],
+    inputs: ['cantos', 'grande', 'cor'],
     outputs: ['buraco_b'],
-    maxHiddenLayers: 1,
-    maxHiddenPerLayer: 3,
-    idealHidden: 0,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 200, activation: 'tanh' },
-    dataset: triagemData,
-    idealTopology: fullyConnected(['cantos', 'grande'], [], ['buraco_b']),
+    budget: 2,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: triagemTrain,
+    reference: { topology: sparse(['cantos', 'grande', 'cor'], ['buraco_b'], { buraco_b: ['cantos', 'grande'] }) },
     cases: triagemCases,
   },
   {
+    id: 'fronteira',
+    pos: { x: 0.23, y: 0.74 },
+    requires: ['triagem'],
+    skin: 'field',
+    inputs: FIELD_IN,
+    extraInputs: FIELD_EXTRA,
+    outputs: ['invasor'],
+    targetLoss: 0.06,
+    budget: 2,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: fronteira.train,
+    validation: fronteira.validation,
+    reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [], ['invasor']) },
+    cases: fronteira.cases,
+    passRatio: 0.9,
+  },
+  {
     id: 'corredor',
-    pos: { x: 0.4, y: 0.72 },
+    pos: { x: 0.31, y: 0.26 },
     requires: ['triagem'],
     skin: 'maze',
     inputs: WALL_IN,
-    outputs: ['andar', 'virar_esq', 'virar_dir'],
-    maxHiddenLayers: 1,
-    maxHiddenPerLayer: 4,
-    idealHidden: 0,
+    outputs: WALL_OUT,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 200, activation: 'tanh' },
-    dataset: wallPolicy,
-    idealTopology: fullyConnected(WALL_IN, [], ['andar', 'virar_esq', 'virar_dir']),
+    budget: 5,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: wallTrain,
+    // "parede_dir" é um sensor inútil para esta política: 5 cabos bastam.
+    reference: {
+      topology: sparse(WALL_IN, WALL_OUT, {
+        andar: ['parede_frente'],
+        virar_esq: ['parede_frente', 'parede_esq'],
+        virar_dir: ['parede_frente', 'parede_esq'],
+      }),
+    },
     maze: {
       grid: [
         '#############',
@@ -194,39 +248,56 @@ export const MISSIONS: MissionDef[] = [
   },
   {
     id: 'xor',
-    pos: { x: 0.43, y: 0.16 },
-    requires: ['triagem'],
+    pos: { x: 0.41, y: 0.68 },
+    requires: ['fronteira'],
     skin: 'sorter',
     inputs: ['luz_a', 'luz_b'],
     outputs: ['ativar'],
-    maxHiddenLayers: 1,
-    maxHiddenPerLayer: 4,
-    idealHidden: 2,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 400, activation: 'tanh' },
-    dataset: [
-      { inputs: [0, 0], targets: [0] },
-      { inputs: [0, 1], targets: [1] },
-      { inputs: [1, 0], targets: [1] },
-      { inputs: [1, 1], targets: [0] },
-    ],
-    idealTopology: fullyConnected(['luz_a', 'luz_b'], [2], ['ativar']),
+    budget: 8,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: [point({ luz_a: 0, luz_b: 0 }, [0]), point({ luz_a: 0, luz_b: 1 }, [1]), point({ luz_a: 1, luz_b: 0 }, [1]), point({ luz_a: 1, luz_b: 1 }, [0])],
+    reference: { topology: fullyConnected(['luz_a', 'luz_b'], [2], ['ativar']) },
+    needsHidden: true,
     cases: xorCases,
   },
   {
+    id: 'quadrantes',
+    pos: { x: 0.5, y: 0.2 },
+    requires: ['xor'],
+    skin: 'field',
+    inputs: FIELD_IN,
+    extraInputs: FIELD_EXTRA,
+    outputs: ['invasor'],
+    targetLoss: 0.08,
+    budget: 12,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: quadrantes.train,
+    validation: quadrantes.validation,
+    reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [3], ['invasor']) },
+    needsHidden: true,
+    cases: quadrantes.cases,
+    passRatio: 0.9,
+  },
+  {
     id: 'labirinto',
-    pos: { x: 0.62, y: 0.46 },
-    requires: ['corredor', 'xor'],
+    pos: { x: 0.57, y: 0.62 },
+    requires: ['corredor'],
     skin: 'maze',
     inputs: BEACON_IN,
-    outputs: ['andar', 'virar_esq', 'virar_dir', 'hackear'],
-    maxHiddenLayers: 2,
-    maxHiddenPerLayer: 4,
-    idealHidden: 0,
+    outputs: BEACON_OUT,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 400, activation: 'tanh' },
-    dataset: beaconPolicy,
-    idealTopology: fullyConnected(BEACON_IN, [], ['andar', 'virar_esq', 'virar_dir', 'hackear']),
+    budget: 10,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: beaconTrain,
+    reference: {
+      topology: sparse(BEACON_IN, BEACON_OUT, {
+        andar: ['farol_frente', 'firewall_frente'],
+        hackear: ['farol_frente', 'firewall_frente'],
+        virar_esq: ['farol_frente', 'farol_esq', 'farol_dir'],
+        virar_dir: ['farol_frente', 'farol_esq', 'farol_dir'],
+      }),
+    },
     maze: {
       grid: [
         '###############',
@@ -244,35 +315,104 @@ export const MISSIONS: MissionDef[] = [
     },
   },
   {
+    id: 'ilha',
+    pos: { x: 0.66, y: 0.24 },
+    requires: ['quadrantes'],
+    skin: 'field',
+    inputs: FIELD_IN,
+    extraInputs: FIELD_EXTRA,
+    outputs: ['invasor'],
+    targetLoss: 0.08,
+    budget: 16,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: ilha.train,
+    validation: ilha.validation,
+    // Sem upgrades também dá (com sorte na semente); com x² e y² vira uma reta.
+    reference: {
+      topology: denseFrom(FIELD_IN, FIELD_IN, [4], ['invasor']),
+      hyper: { learningRate: 0.03, epochs: 800 },
+      earlyStop: true,
+      needs: ['epochs', 'earlystop'],
+    },
+    needsHidden: true,
+    cases: ilha.cases,
+    passRatio: 0.9,
+  },
+  {
     id: 'captcha',
-    pos: { x: 0.8, y: 0.76 },
-    requires: ['labirinto'],
+    pos: { x: 0.74, y: 0.72 },
+    requires: ['quadrantes', 'labirinto'],
     skin: 'captcha',
     inputs: ['cantos', 'ruido'],
     outputs: ['marcar'],
-    maxHiddenLayers: 2,
-    maxHiddenPerLayer: 4,
-    idealHidden: 2,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.3, epochs: 800, activation: 'tanh' },
-    dataset: captchaData,
-    idealTopology: fullyConnected(['cantos', 'ruido'], [2], ['marcar']),
+    budget: 6,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: captchaTrain,
+    // 3 estrelas exigem deixar o sensor "ruido" sem cabo.
+    reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']) },
+    needsHidden: true,
     cases: buildCaptcha(),
   },
   {
+    id: 'luas',
+    pos: { x: 0.83, y: 0.34 },
+    requires: ['ilha'],
+    skin: 'field',
+    inputs: FIELD_IN,
+    extraInputs: FIELD_EXTRA,
+    outputs: ['invasor'],
+    targetLoss: 0.08,
+    budget: 16,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: luas.train,
+    validation: luas.validation,
+    reference: {
+      topology: denseFrom(FIELD_IN, FIELD_IN, [4], ['invasor']),
+      hyper: { learningRate: 0.03, epochs: 800 },
+      earlyStop: true,
+      needs: ['epochs', 'earlystop'],
+    },
+    needsHidden: true,
+    cases: luas.cases,
+    passRatio: 0.9,
+  },
+  {
+    id: 'alvo',
+    pos: { x: 0.9, y: 0.78 },
+    requires: ['luas', 'captcha'],
+    skin: 'field',
+    inputs: FIELD_IN,
+    extraInputs: FIELD_EXTRA,
+    outputs: ['invasor'],
+    targetLoss: 0.1,
+    budget: 12,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: alvo.train,
+    validation: alvo.validation,
+    // Com x² e y² o anel vira uma faixa: 2 neurônios resolvem.
+    reference: {
+      topology: denseFrom([...FIELD_IN, ...FIELD_EXTRA], ['x2', 'y2'], [2], ['invasor']),
+      hyper: { learningRate: 0.03, epochs: 800 },
+      needs: ['features', 'epochs'],
+    },
+    needsHidden: true,
+    cases: alvo.cases,
+    passRatio: 0.88,
+  },
+  {
     id: 'turing',
-    pos: { x: 0.91, y: 0.22 },
-    requires: ['captcha'],
+    pos: { x: 0.95, y: 0.16 },
+    requires: ['alvo'],
     skin: 'turing',
-    inputs: ['saudacao', 'pergunta', 'emocao'],
+    inputs: TURING_IN,
     outputs: TURING_OUT,
-    maxHiddenLayers: 2,
-    maxHiddenPerLayer: 4,
-    idealHidden: 0,
     targetLoss: 0.05,
-    defaults: { learningRate: 0.5, epochs: 400, activation: 'tanh' },
-    dataset: turingData,
-    idealTopology: fullyConnected(['saudacao', 'pergunta', 'emocao'], [], TURING_OUT),
+    budget: 26,
+    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    train: turingTrain,
+    reference: { topology: fullyConnected(TURING_IN, [3], TURING_OUT) },
+    needsHidden: true,
     cases: turingCases,
   },
 ];

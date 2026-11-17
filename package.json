@@ -1,7 +1,7 @@
 {
   "name": "neurobot",
   "private": true,
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "NeuroBot — jogo web (Phaser) para aprender redes neurais treinando um robô",
   "type": "module",
   "scripts": {

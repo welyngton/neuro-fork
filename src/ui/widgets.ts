@@ -109,8 +109,11 @@ export class LineChart extends Phaser.GameObjects.Container {
     scene.add.existing(this);
   }
 
-  /** @param target linha tracejada de meta (0 = não desenhar). */
-  draw(history: number[], target: number): void {
+  /**
+   * @param target linha tracejada de meta (0 = não desenhar).
+   * @param second segunda curva opcional (ex.: perda de validação), em amarelo.
+   */
+  draw(history: number[], target: number, second: number[] = []): void {
     const g = this.g;
     const w = this.boxW;
     const h = this.boxH;
@@ -125,18 +128,22 @@ export class LineChart extends Phaser.GameObjects.Container {
       g.lineStyle(2, C.green, 0.9);
       for (let x = 0; x < w; x += 16) g.lineBetween(x, yOf(target), Math.min(w, x + 8), yOf(target));
     }
-    if (history.length < 2) return;
-    const stride = Math.max(1, Math.floor(history.length / 240));
-    g.lineStyle(3, this.color);
-    g.beginPath();
-    for (let i = 0; i < history.length; i += stride) {
-      const px = (i / (history.length - 1)) * w;
-      if (i === 0) g.moveTo(px, yOf(history[i]));
-      else g.lineTo(px, yOf(history[i]));
-    }
-    g.lineTo(w, yOf(history[history.length - 1]));
-    g.strokePath();
-    g.fillStyle(0xffffff).fillCircle(w, yOf(history[history.length - 1]), 5);
+    const line = (data: number[], color: number) => {
+      if (data.length < 2) return;
+      const stride = Math.max(1, Math.floor(data.length / 240));
+      g.lineStyle(3, color);
+      g.beginPath();
+      for (let i = 0; i < data.length; i += stride) {
+        const px = (i / (data.length - 1)) * w;
+        if (i === 0) g.moveTo(px, yOf(data[i]));
+        else g.lineTo(px, yOf(data[i]));
+      }
+      g.lineTo(w, yOf(data[data.length - 1]));
+      g.strokePath();
+      g.fillStyle(0xffffff).fillCircle(w, yOf(data[data.length - 1]), 4);
+    };
+    line(history, this.color);
+    line(second, C.yellow);
   }
 }
 

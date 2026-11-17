@@ -12,14 +12,16 @@
  */
 import Phaser from 'phaser';
 import { analytics, audio, state } from '../app/services';
-import { boardToTopology } from '../core/missions/board';
+import { Blueprint, boardToTopology } from '../core/missions/board';
 import { FINAL_MISSION_ID, getMission } from '../core/missions/catalog';
 import { SimResult, runMission } from '../core/missions/runMission';
 import { MissionDef } from '../core/missions/types';
-import { Topology, countHidden, reconcileParams } from '../core/nn/network';
+import { Topology, countHidden, forward, networkCost, reconcileParams } from '../core/nn/network';
+import { getCard } from '../core/progression/cards';
 import { Stars, calculateStars } from '../core/scoring';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
+import { celebrate, tip } from '../ui/Toast';
 import { burst } from '../ui/fx';
 import { C, body, title } from '../ui/theme';
 import { StarRow, addPanel } from '../ui/widgets';
@@ -32,6 +34,7 @@ export class SimulationScene extends BaseScene {
   protected accent = C.cyan;
 
   private mission!: MissionDef;
+  private bp!: Blueprint;
   private topology!: Topology;
   private result!: SimResult;
   private speedIndex = 0;
@@ -44,13 +47,14 @@ export class SimulationScene extends BaseScene {
 
   init(data: MissionSceneData): void {
     this.mission = getMission(data.missionId);
-    this.music = this.mission.skin === 'captcha' || this.mission.skin === 'turing' ? 'boss' : 'sim';
+    this.music = ['captcha', 'turing', 'alvo', 'luas'].includes(this.mission.id) ? 'boss' : 'sim';
   }
 
   protected build(): void {
     const m = this.mission;
     const d = state.design(m.id);
-    this.topology = boardToTopology(m, d.board);
+    this.bp = state.blueprint(m.id);
+    this.topology = boardToTopology(this.bp, d.board);
     const params = reconcileParams(this.topology, d.params, d.seed);
     this.result = runMission(m, this.topology, params, d.hyper.activation);
     this.setSpeed(0);
@@ -74,7 +78,16 @@ export class SimulationScene extends BaseScene {
     new NeonButton(this, this.W - 80, by, 120, 64, `${t('sim.skip')} ▶▶`, () => this.setSpeed(-1), { color: C.text, size: 15 });
     const hudText = body(this, 384, by, '', 20, C.text).setOrigin(0, 0.5).setWordWrapWidth(this.W - 384 - 370);
 
-    const skin = SKINS[m.skin]({ scene: this, rect, mission: m, result: this.result, hud: (s) => hudText.setText(s) });
+    const skin = SKINS[m.skin]({
+      scene: this,
+      rect,
+      mission: m,
+      result: this.result,
+      hud: (s) => hudText.setText(s),
+      predict: (inputs) => forward(this.topology, params, inputs, d.hyper.activation).outputs,
+    });
+    if (m.validation) tip(this, 'generalize');
+    else if (m.outputs.length > 1) tip(this, 'argmax');
     void this.run(skin.steps, (i) => skin.play(i));
   }
 
@@ -105,18 +118,42 @@ export class SimulationScene extends BaseScene {
     const d = state.design(m.id);
     const win = this.result.success;
     const hidden = countHidden(this.topology);
-    const stars: Stars = calculateStars({ success: win, loss: d.loss, targetLoss: m.targetLoss, hiddenUsed: hidden, idealHidden: m.idealHidden });
+    const cost = networkCost(this.topology);
+    const stars: Stars = calculateStars({ success: win, loss: d.loss, targetLoss: m.targetLoss, cost, budget: m.budget });
     const isFinal = m.id === FINAL_MISSION_ID;
     state.recordResult(m.id, stars, isFinal);
+    this.countStats(win);
     analytics.track('sim_result', { mission: m.id, success: win, stars, loss: +d.loss.toFixed(4), hidden });
     if (isFinal && win) analytics.track('game_finished', { stars: state.totalStars });
     audio.sfx(win ? 'win' : 'lose');
     if (win) burst(this, this.W / 2, this.H / 2, C.green, 60, 700);
     else this.cameras.main.shake(300, 0.01);
-    this.showResult(win, stars, isFinal);
+    this.showResult(win, stars, isFinal, cost);
+    celebrate(this);
   }
 
-  private showResult(win: boolean, stars: Stars, isFinal: boolean): void {
+  /** Atualiza os contadores que alimentam as conquistas. */
+  private countStats(win: boolean): void {
+    const m = this.mission;
+    const d = state.design(m.id);
+    const r = this.result;
+    const t = this.topology;
+    state.bump('sims');
+    const nothing = r.kind === 'classification' ? r.correctCount === 0 : r.outcome === 'crash' && r.frames.length <= 2;
+    if (!win && nothing) state.bump('zero_sims');
+    if (!win && d.loss <= m.targetLoss) state.bump('good_loss_lost');
+    if (!win) return;
+    const used = new Set(t.links.map((l) => l[0]));
+    if (t.hidden.length >= 2 && t.hidden.every((layer) => layer.length === 1)) state.bump('duck_wins');
+    if (countHidden(t) === this.bp.layers * this.bp.slots) state.bump('full_board_wins');
+    if (m.inputs.length > 1 && m.inputs.some((id) => !used.has(id))) state.bump('sparse_wins');
+    if (m.extraInputs?.some((id) => used.has(id))) state.bump('feature_wins');
+    if (getCard(d.card ?? '')?.kind === 'azar') state.bump('bad_card_wins');
+    if (d.card === 'transfer') state.bump('transfer_wins');
+    if (d.usedEarlyStop) state.bump('earlystop_wins');
+  }
+
+  private showResult(win: boolean, stars: Stars, isFinal: boolean, cost: number): void {
     const m = this.mission;
     const d = state.design(m.id);
     const layer = this.add.container(0, 0).setDepth(2000);
@@ -135,7 +172,7 @@ export class SimulationScene extends BaseScene {
       r.kind === 'classification'
         ? t('sim.score', { a: r.correctCount, b: r.steps.length })
         : r.outcome === 'goal'
-          ? `${r.frames.length} passos`
+          ? t('sim.steps', { n: r.frames.length })
           : t(`sim.reason.${r.outcome}`);
     layer.add(body(this, this.W / 2, py + 88, detail, 24, C.text).setOrigin(0.5));
 
@@ -147,7 +184,7 @@ export class SimulationScene extends BaseScene {
     const criteria: [boolean, string][] = [
       [stars >= 1, t('sim.star1')],
       [stars >= 2, `${t('sim.star2', { v: m.targetLoss })}  (${d.loss.toFixed(3)})`],
-      [stars >= 3, m.idealHidden ? t('sim.star3', { n: m.idealHidden }) : t('sim.star3zero')],
+      [stars >= 3, t('sim.star3', { n: m.budget, c: cost })],
     ];
     criteria.forEach(([ok, label], i) => {
       layer.add(body(this, px + 70, py + 204 + i * 36, `${ok ? '★' : '☆'}  ${label}`, 22, ok ? C.yellow : C.dim));

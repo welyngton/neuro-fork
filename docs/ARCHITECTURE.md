@@ -12,11 +12,13 @@ src/
 ├── core/                LÓGICA PURA — sem Phaser, DOM ou rede; 100% testável em Node
 │   ├── nn/              network.ts (forward, backprop, validação) · Trainer.ts
 │   ├── simulation/      classification.ts · maze.ts
-│   ├── missions/        types.ts · catalog.ts (as 7 missões) · board.ts · runMission.ts
+│   ├── missions/        types.ts · catalog.ts (as 12 missões) · datasets.ts (campos 2D)
+│   │                    board.ts (tabuleiro + planta) · runMission.ts
+│   ├── progression/     upgrades.ts (loja) · cards.ts · achievements.ts · avatars.ts
 │   └── scoring.ts       regra das estrelas
 ├── state/GameState.ts   progresso + opções + desenho salvo; persiste em localStorage
 ├── services/
-│   ├── i18n.ts          textos pt-BR / en
+│   ├── i18n/            index.ts (t, setLocale) · pt.ts · en.ts
 │   ├── FirebaseService.ts   login Google, Firestore (usuarios/{uid}), Firebase Analytics
 │   ├── googleTag.ts         gtag.js (GA4) e Google Tag Manager
 │   ├── AnalyticsService.ts  fachada de eventos
@@ -26,13 +28,15 @@ src/
 │   ├── NeonButton.ts    botão
 │   ├── widgets.ts       painel, StepSlider, LineChart, StarRow, chip
 │   ├── NetworkView.ts   desenho + hit-test da rede (Design e Treino)
+│   ├── Toast.ts         avisos: dicas de conceito (tip) e conquistas (celebrate)
 │   ├── background.ts    fundo low-poly
 │   └── fx.ts            texturas procedurais, partículas, brilho
 ├── entities/Robot.ts    o mascote
 └── scenes/
     ├── BaseScene.ts     base comum (fade, barra superior, wait/tween com await)
-    ├── BootScene · MenuScene · DesignScene · TrainScene · SimulationScene · EndingScene
-    └── skins/           como cada simulação é ENCENADA: sorter · maze · captcha · turing
+    ├── BootScene · MenuScene · ShopScene · AvatarScene · AchievementsScene
+    ├── DesignScene · TrainScene · SimulationScene · EndingScene
+    └── skins/           como cada simulação é ENCENADA: sorter · maze · field · captcha · turing
 ```
 
 ### Regra de dependência
@@ -50,10 +54,20 @@ Consequência: bug de regra se conserta e se testa em `core/`; bug visual, em `s
 ## Fluxo de dados de uma missão
 
 1. **Design** edita um `Board` (encaixes ocupados + cabos) guardado em `GameState.design(id)`.
+   O tamanho do tabuleiro vem da `Blueprint` = missão + upgrades (`state.blueprint(id)`).
 2. **Treino** converte `Board → Topology` (`boardToTopology`), reaproveita pesos antigos
-   (`reconcileParams`) e roda o `Trainer` algumas épocas por frame; salva `params` e `loss`.
-3. **Simulação** chama `runMission`, encena, calcula estrelas (`calculateStars`),
-   grava com `GameState.recordResult` e dispara `analytics.track('sim_result')`.
+   (`reconcileParams`) e roda o `Trainer` (Adam, com L2/dropout opcionais) algumas épocas por
+   frame, medindo perda de treino e de validação; a carta escolhida vira `RunMods`.
+3. **Simulação** chama `runMission`, encena, calcula estrelas (`calculateStars`: vitória, perda,
+   custo x orçamento), grava com `GameState.recordResult`, soma os contadores das conquistas
+   (`state.bump`) e dispara `analytics.track('sim_result')`.
+
+## Dificuldade — o contrato de cada missão
+
+Cada `MissionDef` declara `budget` (custo máximo para a 3ª estrela), `reference` (uma solução
+que cabe no orçamento) e, quando for o caso, `needsHidden`. `core.test.ts` garante que: a
+referência vence com 2★ na maioria das sementes; redes zeradas não vencem; nas missões
+`needsHidden`, ligar sensores direto nas ações não vence; nas demais, ligar tudo estoura o orçamento.
 
 ## Responsividade
 
@@ -75,6 +89,18 @@ lógicos; texto ≥ 16 px lógicos.
 2. Adicione os textos `mission.<id>.*` e `io.<sensor/ação>` em `services/i18n.ts`.
 3. Rode `npm test`: os testes de `core.test.ts` verificam automaticamente que a rede de
    referência treina e vence — e que uma rede zerada não vence.
+
+### Criar um upgrade, uma carta, uma conquista ou um avatar
+- Upgrade: `core/progression/upgrades.ts` (`UPGRADES` + `capsFor`) e textos `upg.<id>.*`.
+- Carta: `core/progression/cards.ts` (`CARDS`, efeitos em `RunMods`) e textos `card.<id>.*`.
+  Efeito novo? Acrescente o campo em `RunMods` e aplique-o em `TrainScene` (`trainData`/`startParams`/`toggle`).
+- Conquista: `core/progression/achievements.ts` e textos `ach.<id>.*`; se precisar de um contador
+  novo, chame `state.bump('nome')` na cena certa e liste a chave em `SaveData.stats`.
+- Avatar: `core/progression/avatars.ts` e o desenho em `entities/Robot.ts`.
+
+### Criar uma dica de conceito
+Textos `tip.<id>.t` / `tip.<id>.d` no i18n e `tip(this, '<id>')` no ponto da cena em que o
+conceito aparece (`true` no 3º argumento = repetir a cada visita).
 
 ### Criar uma skin de simulação
 1. Escreva uma `SkinFactory` em `scenes/skins/<nome>.ts` (veja `sorter.ts` como modelo):
@@ -101,8 +127,9 @@ Novo dicionário em `services/i18n.ts`, registrado em `DICTS` e `LOCALES`.
 ## Testes
 
 - `npm test` — Vitest, só `core/` e `state/` (rápido, sem navegador).
-- `npm run smoke` — Chrome headless joga as 7 missões (AUTO → treinar → simular), testa a
-  edição manual no Design e tira capturas em desktop e celular. Falha se houver erro no console.
+- `npm run smoke` — Chrome headless joga as 12 missões com a solução de referência (comprando os
+  upgrades necessários), testa a edição manual no Design, visita loja, avatar, conquistas, cartas
+  e lentes, e tira capturas em desktop e celular. Falha se houver erro no console.
 
 ## Decisões e limites conhecidos
 

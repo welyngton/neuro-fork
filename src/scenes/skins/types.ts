@@ -23,6 +23,8 @@ export interface SkinContext<R extends SimResult = SimResult> {
   result: R;
   /** Atualiza o texto do rodapé (sensores/ação do passo atual). */
   hud(text: string): void;
+  /** Consulta a rede do jogador: leituras por sensor -> saída por ação. */
+  predict(inputs: Record<string, number>): Record<string, number>;
 }
 
 export interface SimSkin {

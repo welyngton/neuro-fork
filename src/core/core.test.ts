@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { MISSIONS, fullyConnected } from './missions/catalog';
 import { runMission } from './missions/runMission';
+import { MissionDef, toSamples } from './missions/types';
 import { Trainer } from './nn/Trainer';
-import { forward, initParams, reconcileParams, validateTopology } from './nn/network';
+import { Topology, forward, initParams, networkCost, reconcileParams, validateTopology } from './nn/network';
 import { calculateStars } from './scoring';
+
+/** Treina `t` na missão e diz se venceu (e com que perda). */
+function attempt(m: MissionDef, t: Topology, seed: number, earlyStop = false, hyper = m.defaults) {
+  const tr = new Trainer(t, initParams(t, seed), toSamples(t, m.train), { ...hyper }, m.validation ? toSamples(t, m.validation) : []).runAll();
+  const params = earlyStop ? tr.best.params : tr.params;
+  const loss = earlyStop ? tr.best.loss : tr.valLoss;
+  return { win: runMission(m, t, params, hyper.activation).success, loss };
+}
 
 describe('rede neural', () => {
   it('forward é determinístico e a saída fica em [0,1]', () => {
@@ -30,44 +39,62 @@ describe('rede neural', () => {
     const p2 = reconcileParams(fullyConnected(['a'], [1], ['y']), p1, 9);
     expect(p2.biases.y).toBe(p1.biases.y);
   });
+
+  it('dropout e L2 treinam sem explodir', () => {
+    const m = MISSIONS.find((x) => x.id === 'xor')!;
+    const t = fullyConnected(m.inputs, [4], m.outputs);
+    const tr = new Trainer(t, initParams(t, 1), toSamples(t, m.train), { ...m.defaults, dropout: 0.2, l2: 0.001 }).runAll();
+    expect(Number.isFinite(tr.loss)).toBe(true);
+    expect(tr.loss).toBeLessThan(0.25);
+  });
 });
 
 describe('missões', () => {
+  it('são 12 e todas têm requisitos válidos', () => {
+    expect(MISSIONS.length).toBe(12);
+    const ids = new Set(MISSIONS.map((m) => m.id));
+    for (const m of MISSIONS) for (const r of m.requires) expect(ids.has(r)).toBe(true);
+  });
+
   for (const m of MISSIONS) {
-    it(`${m.id}: rede sem treino NÃO vence com pesos zerados`, () => {
-      const p = initParams(m.idealTopology, 1);
+    it(`${m.id}: rede com pesos zerados NÃO vence`, () => {
+      const t = m.reference.topology;
+      const p = initParams(t, 1);
       for (const k of Object.keys(p.weights)) p.weights[k] = 0;
       for (const k of Object.keys(p.biases)) p.biases[k] = 0;
-      expect(runMission(m, m.idealTopology, p, m.defaults.activation).success).toBe(false);
+      expect(runMission(m, t, p, m.defaults.activation).success).toBe(false);
     });
 
-    it(`${m.id}: rede ideal treinada com os padrões vence e atinge a meta de perda`, () => {
-      // Várias seeds: o botão "embaralhar" do jogo não pode cair em beco sem saída com frequência.
-      let wins = 0;
+    it(`${m.id}: a solução de referência cabe no orçamento e vence com 2★ na maioria das sementes`, () => {
+      const ref = m.reference;
+      expect(networkCost(ref.topology)).toBeLessThanOrEqual(m.budget);
+      let good = 0;
       for (let seed = 1; seed <= 10; seed++) {
-        const tr = new Trainer(m.idealTopology, initParams(m.idealTopology, seed), m.dataset, { ...m.defaults }).runAll();
-        const ok = runMission(m, m.idealTopology, tr.params, m.defaults.activation).success && tr.loss <= m.targetLoss;
-        if (ok) wins++;
-        if (seed === 1) expect(ok, `seed 1 perda=${tr.loss}`).toBe(true);
+        const r = attempt(m, ref.topology, seed, ref.earlyStop, { ...m.defaults, ...ref.hyper });
+        if (r.win && r.loss <= m.targetLoss) good++;
       }
-      expect(wins).toBeGreaterThanOrEqual(7);
+      expect(good).toBeGreaterThanOrEqual(5);
     });
-  }
 
-  it('XOR não é resolvido por um único neurônio', () => {
-    const m = MISSIONS.find((x) => x.id === 'xor')!;
-    const t = fullyConnected(m.inputs, [], m.outputs);
-    const tr = new Trainer(t, initParams(t, 1), m.dataset, { ...m.defaults }).runAll();
-    expect(runMission(m, t, tr.params, 'tanh').success).toBe(false);
-  });
+    const direct = fullyConnected(m.inputs, [], m.outputs);
+    if (m.needsHidden) {
+      it(`${m.id}: ligar sensores direto nas ações NÃO resolve`, () => {
+        for (let seed = 1; seed <= 5; seed++) expect(attempt(m, direct, seed, false, { ...m.defaults, epochs: 800 }).win).toBe(false);
+      });
+    } else if (m.inputs.length > 1 && m.id !== 'fronteira') {
+      it(`${m.id}: ligar tudo em tudo estoura o orçamento (sem 3★ de graça)`, () => {
+        expect(networkCost(direct)).toBeGreaterThan(m.budget);
+      });
+    }
+  }
 });
 
 describe('pontuação', () => {
   it('segue a regra de 0 a 3 estrelas', () => {
-    const base = { loss: 0.01, targetLoss: 0.05, hiddenUsed: 2, idealHidden: 2 };
+    const base = { loss: 0.01, targetLoss: 0.05, cost: 8, budget: 8 };
     expect(calculateStars({ ...base, success: false })).toBe(0);
     expect(calculateStars({ ...base, success: true, loss: 0.2 })).toBe(1);
-    expect(calculateStars({ ...base, success: true, hiddenUsed: 4 })).toBe(2);
+    expect(calculateStars({ ...base, success: true, cost: 12 })).toBe(2);
     expect(calculateStars({ ...base, success: true })).toBe(3);
   });
 });

@@ -13,13 +13,13 @@
  * `GameState` e dos dados recebidos em `init`.
  */
 import Phaser from 'phaser';
-import { audio } from '../app/services';
+import { audio, state } from '../app/services';
 import { MissionDef } from '../core/missions/types';
 import { t } from '../services/i18n';
 import type { ThemeId } from '../services/audio/themes';
 import { NeonButton } from '../ui/NeonButton';
 import { addPolyBackground } from '../ui/background';
-import { C, title } from '../ui/theme';
+import { C, body, title } from '../ui/theme';
 import { addChip } from '../ui/widgets';
 
 /** Dados passados entre as cenas de missão. */
@@ -46,6 +46,8 @@ export abstract class BaseScene extends Phaser.Scene {
 
   create(): void {
     this.leaving = false;
+    // Dados por visita (ex.: dicas já mostradas nesta entrada da cena).
+    this.data.reset();
     addPolyBackground(this, this.accent, this.scene.key.length);
     if (this.music) audio.playMusic(this.music);
     this.cameras.main.fadeIn(220, 7, 6, 15);
@@ -75,13 +77,26 @@ export abstract class BaseScene extends Phaser.Scene {
   }
 
   /**
+   * Cabeçalho das páginas do menu (Loja, Avatar, Conquistas): botão VOLTAR,
+   * título e o saldo de estrelas. @returns a altura ocupada.
+   */
+  protected addPageHeader(titleKey: string, color: number): number {
+    const h = 68;
+    this.add.graphics().fillStyle(C.bg, 0.75).fillRect(0, 0, this.W, h).lineStyle(2, C.panelEdge).lineBetween(0, h, this.W, h);
+    new NeonButton(this, 96, h / 2, 160, 50, `◀ ${t('nav.back')}`, () => this.go('Menu'), { color: C.orange, size: 18 });
+    title(this, 196, h / 2, t(titleKey), 26, color).setOrigin(0, 0.5);
+    body(this, this.W - 24, h / 2, t('menu.balance', { n: state.balance }), 24, C.yellow).setOrigin(1, 0.5);
+    return h;
+  }
+
+  /**
    * Barra superior das cenas de missão: botão MAPA, título e os três chips de fase.
    * @returns a altura ocupada (para a cena posicionar o resto abaixo).
    */
   protected addTopBar(mission: MissionDef, phase: Phase): number {
     const h = 68;
     this.add.graphics().fillStyle(C.bg, 0.75).fillRect(0, 0, this.W, h).lineStyle(2, C.panelEdge).lineBetween(0, h, this.W, h);
-    new NeonButton(this, 84, h / 2, 136, 50, `◀ ${t('nav.map')}`, () => this.go('Menu'), { color: C.dim, size: 18 });
+    new NeonButton(this, 84, h / 2, 136, 50, `◀ ${t('nav.map')}`, () => this.go('Menu'), { color: C.orange, size: 18 });
     title(this, 170, h / 2, t(`mission.${mission.id}.title`), 24, C.text).setOrigin(0, 0.5);
     const phases: Phase[] = ['design', 'train', 'sim'];
     const colors = { design: C.yellow, train: C.magenta, sim: C.cyan };

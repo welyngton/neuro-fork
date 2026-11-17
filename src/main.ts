@@ -7,13 +7,17 @@ import '@fontsource/oxanium/800.css';
 import '@fontsource/rajdhani/700.css';
 import './styles.css';
 import Phaser from 'phaser';
-import { audio, bootServices } from './app/services';
+import { audio, bootServices, state } from './app/services';
+import { MISSIONS } from './core/missions/catalog';
 import { logicalWidth, watchViewport } from './app/viewport';
 import { installGoogleTag } from './services/googleTag';
+import { AchievementsScene } from './scenes/AchievementsScene';
+import { AvatarScene } from './scenes/AvatarScene';
 import { BootScene } from './scenes/BootScene';
 import { DesignScene } from './scenes/DesignScene';
 import { EndingScene } from './scenes/EndingScene';
 import { MenuScene } from './scenes/MenuScene';
+import { ShopScene } from './scenes/ShopScene';
 import { SimulationScene } from './scenes/SimulationScene';
 import { TrainScene } from './scenes/TrainScene';
 import { C, GAME_HEIGHT } from './ui/theme';
@@ -37,7 +41,7 @@ async function start(): Promise<void> {
     },
     input: { activePointers: 2 },
     render: { antialias: true, powerPreference: 'high-performance' },
-    scene: [BootScene, MenuScene, DesignScene, TrainScene, SimulationScene, EndingScene],
+    scene: [BootScene, MenuScene, ShopScene, AvatarScene, AchievementsScene, DesignScene, TrainScene, SimulationScene, EndingScene],
   });
   watchViewport(game);
   bootServices(game);
@@ -52,7 +56,7 @@ async function start(): Promise<void> {
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
   }
   // Exposto para depuração no console e para os testes de fumaça.
-  (window as unknown as { __game: Phaser.Game }).__game = game;
+  Object.assign(window, { __game: game, __neuro: { state, MISSIONS } });
 }
 
 void start();
