@@ -89,7 +89,7 @@ describe('board', () => {
 describe('cartas', () => {
   it('a mesa traz 2 ou 3 cartas: táticas diferentes e uma do destino', () => {
     const sizes = new Set<number>();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 2000; i++) {
       const d = dealCards();
       sizes.add(d.tactics.length + 1);
       expect(d.tactics.every((c) => c.kind === 'tatica')).toBe(true);

@@ -108,6 +108,8 @@ export function dealCards(rng: () => number = Math.random): { tactics: CardDef[]
     const c = pick(pool.filter((x) => !tactics.includes(x)));
     tactics.push(c);
   }
-  const fate = pick(CARDS.filter((c) => c.kind === (rng() < 0.6 ? 'sorte' : 'azar')));
+  // Sorteia o tipo UMA vez (antes, o sorteio dentro do filtro podia deixar a lista vazia).
+  const kind = rng() < 0.6 ? 'sorte' : 'azar';
+  const fate = pick(CARDS.filter((c) => c.kind === kind));
   return { tactics, fate };
 }
