@@ -10,7 +10,7 @@
  *
  * Colunas: 0 = sensores · 1..N = camadas ocultas · N+1 = ações.
  */
-import { Topology } from '../nn/network';
+import { Activation, Topology, linkKey } from '../nn/network';
 import { Caps } from '../progression/upgrades';
 import { MissionDef } from './types';
 
@@ -37,6 +37,10 @@ export interface Board {
   /** `hidden[coluna][encaixe]` = há neurônio ali? */
   hidden: boolean[][];
   links: [string, string][];
+  /** Ativação escolhida por neurônio (ferramenta ATIVAÇÃO); ausente = padrão. */
+  acts?: Record<string, Activation>;
+  /** Cabos congelados (ferramenta TRAVA), como chaves `origem->destino`. */
+  frozen?: string[];
 }
 
 /** Id do neurônio no encaixe (coluna oculta `col`, linha `row`). */
@@ -53,7 +57,10 @@ export function emptyBoard(bp: Blueprint): Board {
 export function fitBoard(bp: Blueprint, board: Board): Board {
   const old = board.hidden ?? [];
   board.hidden = Array.from({ length: bp.layers }, (_, c) => Array.from({ length: bp.slots }, (_, r) => old[c]?.[r] ?? false));
-  board.links = (board.links ?? []).filter(([a, b]) => nodeColumn(bp, board, a) >= 0 && nodeColumn(bp, board, b) >= 0);
+  // Saves antigos podem ter cabos sensor->ação, hoje proibidos: saem aqui.
+  board.links = (board.links ?? []).filter(([a, b]) => isAllowedLink(bp, board, a, b));
+  board.acts ??= {};
+  board.frozen ??= [];
   return board;
 }
 
@@ -66,23 +73,34 @@ export function nodeColumn(bp: Blueprint, board: Board, id: string): number {
   return -1;
 }
 
+/**
+ * Regra de fiação do jogo: cabos andam para a direita e um sensor NUNCA se
+ * liga direto numa ação — todo sinal passa por pelo menos um neurônio.
+ */
+export function isAllowedLink(bp: Blueprint, board: Board, a: string, b: string): boolean {
+  const ca = nodeColumn(bp, board, a);
+  const cb = nodeColumn(bp, board, b);
+  return ca >= 0 && cb > ca && !(ca === 0 && cb === bp.layers + 1);
+}
+
 /** Converte o tabuleiro na rede usada pelo treino (colunas vazias são ignoradas). */
 export function boardToTopology(bp: Blueprint, board: Board): Topology {
   const hidden = board.hidden
     .map((col, c) => col.map((on, r) => (on ? slotId(c, r) : '')).filter(Boolean))
     .filter((layer) => layer.length > 0);
-  const links = board.links.filter(([a, b]) => {
-    const ca = nodeColumn(bp, board, a);
-    const cb = nodeColumn(bp, board, b);
-    return ca >= 0 && cb > ca;
-  });
-  return { inputs: bp.inputs, hidden, outputs: bp.outputs, links };
+  const links = board.links.filter(([a, b]) => isAllowedLink(bp, board, a, b));
+  const keys = new Set(links.map(([a, b]) => linkKey(a, b)));
+  const alive = new Set(hidden.flat());
+  const acts = Object.fromEntries(Object.entries(board.acts ?? {}).filter(([id]) => alive.has(id)));
+  return { inputs: bp.inputs, hidden, outputs: bp.outputs, links, acts, frozen: (board.frozen ?? []).filter((k) => keys.has(k)) };
 }
 
 /** Liga tudo em tudo entre colunas vizinhas ocupadas (botão AUTO). Não cria neurônios. */
 export function autoWire(bp: Blueprint, board: Board): [string, string][] {
   const layers = [bp.inputs, ...boardToTopology(bp, board).hidden, bp.outputs];
   const links: [string, string][] = [];
+  // Sem neurônios não há o que ligar (sensor não fala direto com ação).
+  if (layers.length < 3) return [];
   for (let l = 0; l < layers.length - 1; l++) for (const a of layers[l]) for (const b of layers[l + 1]) links.push([a, b]);
   return links;
 }
@@ -92,5 +110,7 @@ export function boardFromTopology(bp: Blueprint, t: Topology): Board {
   const board = emptyBoard(bp);
   t.hidden.forEach((layer, c) => layer.forEach((_, r) => (board.hidden[c][r] = true)));
   board.links = t.links.map(([a, b]) => [a, b]);
+  if (t.acts) board.acts = { ...t.acts };
+  if (t.frozen) board.frozen = [...t.frozen];
   return board;
 }

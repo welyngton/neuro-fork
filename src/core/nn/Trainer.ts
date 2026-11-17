@@ -51,7 +51,7 @@ export class Trainer {
   constructor(
     readonly topology: Topology,
     public params: Params,
-    readonly dataset: Sample[],
+    public dataset: Sample[],
     public hyper: Hyper,
     readonly validation: Sample[] = [],
   ) {

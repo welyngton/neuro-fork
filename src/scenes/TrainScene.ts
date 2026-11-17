@@ -13,7 +13,9 @@
  *                      é um eixo; com 3 eixos a nuvem gira em 3D;
  *  - leituras de época / perda / acertos;
  *  - hiperparâmetros (os que dependem de upgrade só aparecem depois de comprados);
- *  - CARTAS: mesa opcional com duas táticas e uma carta do destino.
+ *  - CARTAS: no MEIO de cada rodada o treino para e sorteia 2 ou 3 cartas
+ *    (táticas à vista + uma do destino virada); o jogador escolhe uma ou segue
+ *    sem carta, e o efeito vale para o resto da rodada.
  *
  * O treino roda no próprio laço do jogo, algumas épocas por frame
  * ({@link Trainer.step}), dosadas pelo tempo para durar ~4 s em qualquer aparelho.
@@ -26,7 +28,7 @@ import { getMission } from '../core/missions/catalog';
 import { fieldInputs } from '../core/missions/datasets';
 import { MissionDef, toSamples } from '../core/missions/types';
 import { Trainer } from '../core/nn/Trainer';
-import { Hyper, Params, Sample, Topology, createRng, datasetLoss, forward, initParams, linkKey, reconcileParams, toInputMap } from '../core/nn/network';
+import { Hyper, Params, Sample, Topology, createRng, forward, initParams, linkKey, reconcileParams, toInputMap } from '../core/nn/network';
 import { CardDef, NO_MODS, RunMods, dealCards, modsOf } from '../core/progression/cards';
 import { Caps } from '../core/progression/upgrades';
 import { Robot } from '../entities/Robot';
@@ -74,12 +76,13 @@ export class TrainScene extends BaseScene {
   private msg!: Phaser.GameObjects.Text;
   private cardText!: Phaser.GameObjects.Text;
   private trainBtn!: NeonButton;
-  private cardsBtn!: NeonButton;
   private bot!: Robot;
   /** Carta escolhida para a próxima rodada (ou a que está valendo na rodada atual). */
   private card: CardDef | null = null;
   private mods: RunMods = NO_MODS;
   private runStartLoss = 1;
+  /** Época em que a mesa de cartas abre nesta rodada (-1 = já abriu / não abre). */
+  private drawAt = -1;
 
   constructor() {
     super('Train');
@@ -107,7 +110,6 @@ export class TrainScene extends BaseScene {
     this.valSamples = m.validation ? toSamples(this.topology, m.validation) : [];
     // Hiperparâmetros fora do que os upgrades atuais permitem voltam ao padrão.
     if (!this.caps.epochValues.includes(d.hyper.epochs)) d.hyper.epochs = 200;
-    if (!this.caps.activations.includes(d.hyper.activation)) d.hyper.activation = 'tanh';
     if (!LR_VALUES.includes(d.hyper.learningRate)) d.hyper.learningRate = 0.1;
     // Mantém os pesos dos cabos que sobreviveram a uma ida ao Design.
     const params = reconcileParams(this.topology, d.params, d.seed);
@@ -167,7 +169,7 @@ export class TrainScene extends BaseScene {
       body(this, ix + col * i, ry, label, 15, C.dim);
       return title(this, ix + col * i, ry + 17, '-', 21, color);
     };
-    this.readout = { epoch: stat(0, t('train.epoch'), C.text), loss: stat(1, `${t('train.loss')} (${t('train.target', { v: m.targetLoss })})`, C.magenta), acc: stat(2, t('train.acc'), C.green) };
+    this.readout = { epoch: stat(0, t('train.epoch'), C.text), loss: stat(1, t(this.valSamples.length ? 'train.lossVal' : 'train.loss'), C.magenta), acc: stat(2, t('train.acc'), C.green) };
 
     // Seletores, em duas colunas.
     const sw = iw / 2 - 14;
@@ -181,29 +183,19 @@ export class TrainScene extends BaseScene {
       new StepSlider(this, ix + iw / 2 + 14, sy + 76, sw, t('train.dropout'), DROPOUT_VALUES, DROPOUT_VALUES.includes(d.hyper.dropout ?? 0) ? (d.hyper.dropout ?? 0) : 0, (v) => `${Math.round(v * 100)}%`, (v) => this.setHyper({ dropout: v }), C.violet);
     }
 
-    // Botões: ativação, parada antecipada, embaralhar, cartas.
+    // Botões: parada antecipada (upgrade) e embaralhar.
     const by = sy + 76 * 2 + 14;
     const bw = iw / 2 - 6;
-    if (this.caps.activations.length > 1) {
-      const actBtn: NeonButton = new NeonButton(this, ix + bw / 2, by, bw, 42, t('train.activation', { v: d.hyper.activation }), () => {
-        if (this.running) return;
-        const list = this.caps.activations;
-        const next = list[(list.indexOf(this.design.hyper.activation) + 1) % list.length];
-        this.setHyper({ activation: next });
-        actBtn.setLabel(t('train.activation', { v: next }));
-        this.resetTrainer(this.trainer.params);
-      }, { color: C.violet, size: 13 });
-    }
     if (this.caps.earlystop) {
       const label = () => t('train.earlystop', { v: t(this.design.earlyStop ? 'train.on' : 'train.off') });
-      const esBtn: NeonButton = new NeonButton(this, ix + iw - bw / 2, by, bw, 42, label(), () => {
+      const esBtn: NeonButton = new NeonButton(this, ix + iw - bw / 2, by + 30, bw, 46, label(), () => {
         state.saveDesign(m.id, { earlyStop: !this.design.earlyStop });
         esBtn.setLabel(label()).setSelected(!!this.design.earlyStop);
       }, { color: C.green, size: 12 });
       esBtn.setSelected(!!d.earlyStop);
     }
-    new NeonButton(this, ix + bw / 2, by + 50, bw, 42, t('train.shuffle'), () => this.shuffle(), { color: C.orange, size: 13 });
-    this.cardsBtn = new NeonButton(this, ix + iw - bw / 2, by + 50, bw, 42, `◆ ${t('train.cards')}`, () => this.openCards(), { color: C.yellow, size: 15 });
+    new NeonButton(this, ix + bw / 2, by + 30, bw, 46, t('train.shuffle'), () => this.shuffle(), { color: C.orange, size: 13 });
+    body(this, ix + iw / 2, by - 14, `◆ ${t('train.cardsHint')}`, 16, C.yellow).setOrigin(0.5).setWordWrapWidth(iw).setAlign('center');
   }
 
   private setHyper(patch: Partial<Hyper>): void {
@@ -253,28 +245,35 @@ export class TrainScene extends BaseScene {
     celebrate(this);
   }
 
-  /** Aplica a carta ao conjunto de treino. */
-  private trainData(mods: RunMods): Sample[] {
+  /** Aplica os efeitos de dados de uma carta (ruído, menos dados, augmentation). */
+  private transformData(data: Sample[], mods: RunMods): Sample[] {
     const rng = createRng(this.design.seed * 97 + 5);
-    let data = toSamples(this.topology, this.mission.train);
-    if (mods.dataKeep < 1) data = data.filter(() => rng() < mods.dataKeep).concat(data.slice(0, 2));
     const jitter = (s: Sample, amount: number): Sample => ({ inputs: s.inputs.map((v) => v + (rng() - 0.5) * 2 * amount), targets: s.targets });
-    if (mods.noise > 0) data = data.map((s) => jitter(s, mods.noise));
-    if (mods.augment) data = data.concat(data.map((s) => jitter(s, 0.04)));
-    return data;
+    let out = data;
+    if (mods.dataKeep < 1) out = out.filter(() => rng() < mods.dataKeep).concat(out.slice(0, 2));
+    if (mods.noise > 0) out = out.map((s) => jitter(s, mods.noise));
+    if (mods.augment) out = out.concat(out.map((s) => jitter(s, 0.04)));
+    return out;
   }
 
-  /** Prepara os pesos de partida da rodada conforme a carta. */
-  private startParams(mods: RunMods, train: Sample[]): Params {
+  /** Aplica a carta escolhida ao treino EM ANDAMENTO (vale para o resto da rodada). */
+  private applyCard(card: CardDef): void {
+    const tr = this.trainer;
+    const mods = (this.mods = modsOf(card));
+    this.card = card;
+    tr.hyper.learningRate *= mods.lrMul;
+    tr.hyper.l2 = (tr.hyper.l2 ?? 0) + mods.l2Add;
+    tr.hyper.dropout = (tr.hyper.dropout ?? 0) + mods.dropoutAdd;
+    const left = tr.hyper.epochs - tr.epoch;
+    const newLeft = Math.round(left * mods.epochsMul);
+    tr.hyper.epochs = tr.epoch + newLeft;
+    this.runEpochs += newLeft - left;
+    tr.dataset = this.transformData(tr.dataset, mods);
+
+    let p = tr.params;
     const d = this.design;
-    let p = this.trainer.params;
     if (mods.transfer && d.bestParams) p = reconcileParams(this.topology, d.bestParams, d.seed);
-    if (mods.bestOfSeeds > 0) {
-      for (let k = 1; k <= mods.bestOfSeeds; k++) {
-        const cand = initParams(this.topology, d.seed * 31 + k);
-        if (datasetLoss(this.topology, cand, train, d.hyper.activation) < datasetLoss(this.topology, p, train, d.hyper.activation)) p = cand;
-      }
-    }
+    if (mods.rewind) p = tr.best.params;
     if (mods.weightScale !== 1 || mods.killNeuron) {
       const weights = { ...p.weights };
       for (const k of Object.keys(weights)) weights[k] *= mods.weightScale;
@@ -282,7 +281,9 @@ export class TrainScene extends BaseScene {
       if (mods.killNeuron && victim) for (const [a, b] of this.topology.links) if (b === victim) weights[linkKey(a, b)] = 0;
       p = { weights, biases: { ...p.biases } };
     }
-    return p;
+    tr.params = p;
+    this.view.params = p;
+    this.cardText.setText(t('train.cardActive', { name: t(`card.${card.id}.t`) })).setColor(css(KIND_COLOR[card.kind]));
   }
 
   private toggle(): void {
@@ -292,22 +293,22 @@ export class TrainScene extends BaseScene {
       return;
     }
     if (this.trainer.done) {
-      // Nova rodada: N épocas a partir dos pesos atuais, com os efeitos da carta (se houver).
+      // Nova rodada: N épocas a partir dos pesos atuais. A mesa de cartas abre na metade.
       const d = this.design;
-      this.mods = modsOf(this.card ?? undefined);
-      const train = this.trainData(this.mods);
+      this.card = null;
+      this.mods = NO_MODS;
+      this.cardText.setText('');
       const hyper: Hyper = {
         ...d.hyper,
-        learningRate: d.hyper.learningRate * this.mods.lrMul,
-        l2: (this.caps.l2 ? (d.hyper.l2 ?? 0) : 0) + this.mods.l2Add,
-        dropout: (this.caps.dropout ? (d.hyper.dropout ?? 0) : 0) + this.mods.dropoutAdd,
+        l2: this.caps.l2 ? (d.hyper.l2 ?? 0) : 0,
+        dropout: this.caps.dropout ? (d.hyper.dropout ?? 0) : 0,
       };
-      this.trainer = this.makeTrainer(this.startParams(this.mods, train), hyper, train);
-      this.runEpochs = Math.round(d.hyper.epochs * this.mods.epochsMul);
+      this.trainer = this.makeTrainer(this.trainer.params, hyper, toSamples(this.topology, this.mission.train));
+      this.runEpochs = d.hyper.epochs;
       this.trainer.hyper.epochs = this.runEpochs;
       this.runStartLoss = this.trainer.loss;
+      this.drawAt = Math.floor(this.runEpochs / 2);
       this.owed = 0;
-      this.cardsBtn.setEnabled(false);
       if (this.valSamples.length) tip(this, 'val');
     }
     this.running = true;
@@ -372,8 +373,7 @@ export class TrainScene extends BaseScene {
     // A carta vale por uma rodada.
     this.card = null;
     this.mods = NO_MODS;
-    this.cardText.setText('');
-    this.cardsBtn.setEnabled(true);
+    this.drawAt = -1;
     this.updateReadout();
     celebrate(this);
   }
@@ -381,9 +381,9 @@ export class TrainScene extends BaseScene {
   private updateReadout(): void {
     const tr = this.trainer;
     this.readout.epoch.setText(String(tr.epoch));
-    this.readout.loss.setText(tr.valLoss.toFixed(3)).setColor(css(tr.valLoss <= this.mission.targetLoss ? C.green : C.magenta));
+    this.readout.loss.setText(tr.valLoss.toFixed(3));
     this.readout.acc.setText(`${Math.round(tr.accuracy * 100)}%`);
-    if (this.lens === 'loss') this.chart.draw(tr.history, this.mission.targetLoss, tr.valHistory);
+    if (this.lens === 'loss') this.chart.draw(tr.history, 0, tr.valHistory);
     else if (this.lens === 'boundary' && !this.running) this.drawBoundary();
   }
 
@@ -397,24 +397,36 @@ export class TrainScene extends BaseScene {
 
   /* ------------------------------------------------------------------ cartas */
 
-  private openCards(): void {
-    if (this.running) return;
+  /** Sorteio do meio do treino: pausa e mostra 2 ou 3 cartas para escolher. */
+  private openDraw(): void {
+    this.running = false;
     const deal = dealCards();
+    const cards = [...deal.tactics, deal.fate];
+    audio.sfx('whoosh');
+    this.cameras.main.flash(160, 252, 238, 10);
     const layer = this.add.container(0, 0).setDepth(2000);
-    layer.add(this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.8).setInteractive());
-    layer.add(title(this, this.W / 2, 70, t('cards.title'), 34, C.yellow).setOrigin(0.5));
-    layer.add(body(this, this.W / 2, 112, t('cards.sub'), 22, C.text).setOrigin(0.5));
-    const cw = 270;
-    const ch = 380;
-    const gap = 30;
-    const x0 = this.W / 2 - cw - gap;
-    const cy = 350;
+    this.registry.set('drawOpen', true);
+    layer.add(this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.82).setInteractive());
+    layer.add(title(this, this.W / 2, 62, t('cards.title'), 34, C.yellow).setOrigin(0.5));
+    layer.add(body(this, this.W / 2, 104, t('cards.sub', { e: this.trainer.epoch }), 21, C.text).setOrigin(0.5));
+    const cw = 260;
+    const ch = 370;
+    const gap = 28;
+    const x0 = this.W / 2 - ((cards.length - 1) * (cw + gap)) / 2;
+    const cy = 342;
     let chosen = false;
 
+    const close = (resume: boolean) => {
+      layer.destroy();
+      this.registry.set('drawOpen', false);
+      if (resume) {
+        this.running = true;
+        this.trainBtn.setLabel(t('train.pause'));
+      }
+    };
     const choose = (card: CardDef) => {
-      this.card = card;
+      this.applyCard(card);
       state.bump('cards_drawn');
-      this.cardText.setText(t('train.cardActive', { name: t(`card.${card.id}.t`) })).setColor(css(KIND_COLOR[card.kind]));
       audio.sfx(card.kind === 'azar' ? 'bad' : 'good');
       celebrate(this);
     };
@@ -430,50 +442,59 @@ export class TrainScene extends BaseScene {
       box.add(body(this, 0, 20, t(`card.${card.id}.d`), 21, C.text).setOrigin(0.5).setWordWrapWidth(cw - 44).setAlign('center'));
     };
 
-    [deal.tactics[0], deal.tactics[1]].forEach((card, i) => {
-      const box = this.add.container(x0 + i * (cw + gap), cy);
-      face(box, card);
+    cards.forEach((card, i) => {
+      const box = this.add.container(x0 + i * (cw + gap), cy + 40).setAlpha(0);
+      const isFate = card === deal.fate;
+      if (isFate) {
+        // Carta do destino: virada para baixo até ser escolhida.
+        const back = this.add.graphics();
+        back.fillStyle(0x1b1838).fillPoints(chamfer(cw, ch, 22), true).lineStyle(4, C.violet).strokePoints(chamfer(cw, ch, 22), true, true);
+        for (let k = 0; k < 6; k++) back.lineStyle(2, C.violet, 0.35).strokePoints(chamfer(cw - 30 - k * 34, ch - 30 - k * 50, 16), true, true);
+        box.add([back, title(this, 0, -20, '?', 110, C.violet).setOrigin(0.5), body(this, 0, 110, `${t('cards.fate')}\n${t('cards.fateHint')}`, 18, C.text).setOrigin(0.5).setAlign('center').setWordWrapWidth(cw - 40)]);
+      } else face(box, card);
+      // Cartas entram "distribuídas" uma a uma.
+      this.tweens.add({ targets: box, alpha: 1, y: cy, angle: { from: -8 + i * 8, to: 0 }, duration: 260, delay: 120 + i * 140, ease: 'Back.out', onStart: () => audio.sfx('tick', i * 4) });
       box.setSize(cw, ch).setInteractive({ useHandCursor: true });
       box.on('pointerup', () => {
         if (chosen) return;
         chosen = true;
-        choose(card);
-        this.tweens.add({ targets: box, scale: 1.08, duration: 120, yoyo: true, onComplete: () => layer.destroy() });
+        if (!isFate) {
+          choose(card);
+          this.tweens.add({ targets: box, scale: 1.08, duration: 120, yoyo: true, onComplete: () => close(true) });
+          return;
+        }
+        // Vira a carta do destino: achata, troca a face, abre de novo.
+        this.tweens.add({
+          targets: box,
+          scaleX: 0,
+          duration: 160,
+          onComplete: () => {
+            box.removeAll(true);
+            face(box, card);
+            choose(card);
+            if (card.kind === 'azar') this.cameras.main.shake(200, 0.01);
+            else burst(this, box.x, box.y, C.green, 30, 420);
+            this.tweens.add({ targets: box, scaleX: 1, duration: 160 });
+            this.time.delayedCall(2200, () => close(true));
+          },
+        });
       });
       layer.add(box);
     });
+    layer.add(new NeonButton(this, this.W / 2, this.H - 52, 300, 58, t('cards.none'), () => !chosen && close(true), { color: C.orange, size: 18 }));
+  }
 
-    // Carta do destino: virada para baixo até ser tocada.
-    const fate = this.add.container(x0 + 2 * (cw + gap), cy);
-    const back = this.add.graphics();
-    back.fillStyle(0x1b1838).fillPoints(chamfer(cw, ch, 22), true).lineStyle(4, C.violet).strokePoints(chamfer(cw, ch, 22), true, true);
-    for (let k = 0; k < 6; k++) back.lineStyle(2, C.violet, 0.35).strokePoints(chamfer(cw - 30 - k * 34, ch - 30 - k * 50, 16), true, true);
-    const q = title(this, 0, -20, '?', 110, C.violet).setOrigin(0.5);
-    const hint = body(this, 0, 110, `${t('cards.fate')}\n${t('cards.fateHint')}`, 18, C.text).setOrigin(0.5).setAlign('center').setWordWrapWidth(cw - 40);
-    fate.add([back, q, hint]);
-    fate.setSize(cw, ch).setInteractive({ useHandCursor: true });
-    fate.on('pointerup', () => {
-      if (chosen) return;
-      chosen = true;
-      audio.sfx('whoosh');
-      // Vira a carta: achata, troca a face, abre de novo.
-      this.tweens.add({
-        targets: fate,
-        scaleX: 0,
-        duration: 160,
-        onComplete: () => {
-          fate.removeAll(true);
-          face(fate, deal.fate);
-          choose(deal.fate);
-          if (deal.fate.kind === 'azar') this.cameras.main.shake(200, 0.01);
-          else burst(this, fate.x, fate.y, C.green, 30, 420);
-          this.tweens.add({ targets: fate, scaleX: 1, duration: 160 });
-          this.time.delayedCall(2600, () => layer.destroy());
-        },
-      });
-    });
-    layer.add(fate);
-    layer.add(new NeonButton(this, this.W / 2, this.H - 60, 260, 60, t('cards.none'), () => !chosen && layer.destroy(), { color: C.orange, size: 18 }));
+  /**
+   * Usado pelo teste de fumaça: escolhe a carta `i` (ou nenhuma, com -1) da mesa aberta.
+   * @returns `false` se não há mesa aberta.
+   */
+  resolveDraw(i: number): boolean {
+    const layer = this.children.list.find((o) => (o as Phaser.GameObjects.Container).depth === 2000) as Phaser.GameObjects.Container | undefined;
+    if (!layer) return false;
+    const boxes = layer.list.filter((o) => o instanceof Phaser.GameObjects.Container && !(o instanceof NeonButton)) as Phaser.GameObjects.Container[];
+    const target = i < 0 ? layer.list.find((o) => o instanceof NeonButton) : boxes[i];
+    target?.emit('pointerup');
+    return true;
   }
 
   /* ------------------------------------------------------------------ lentes */
@@ -560,8 +581,17 @@ export class TrainScene extends BaseScene {
       this.owed += (this.runEpochs * Math.min(delta, 100)) / RUN_MS;
       const n = Math.floor(this.owed);
       this.owed -= n;
-      this.trainer.step(n);
+      // Na metade da rodada, o sorteio de cartas.
+      const step = this.drawAt >= 0 ? Math.min(n, Math.max(0, this.drawAt - this.trainer.epoch)) : n;
+      this.trainer.step(step);
       this.view.params = this.trainer.params;
+      if (this.drawAt >= 0 && this.trainer.epoch >= this.drawAt) {
+        this.drawAt = -1;
+        this.updateReadout();
+        this.openDraw();
+        this.view.render(time);
+        return;
+      }
       if (this.frame % 5 === 0) {
         // O "motor" sobe de tom conforme a perda cai.
         audio.sfx('tick', Math.round(Phaser.Math.Clamp(1 - this.trainer.loss / 0.3, 0, 1) * 24) - 12);

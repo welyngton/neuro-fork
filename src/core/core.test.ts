@@ -3,7 +3,7 @@ import { MISSIONS, fullyConnected } from './missions/catalog';
 import { runMission } from './missions/runMission';
 import { MissionDef, toSamples } from './missions/types';
 import { Trainer } from './nn/Trainer';
-import { Topology, forward, initParams, networkCost, reconcileParams, validateTopology } from './nn/network';
+import { Topology, forward, initParams, energyCost, reconcileParams, validateTopology } from './nn/network';
 import { calculateStars } from './scoring';
 
 /** Treina `t` na missão e diz se venceu (e com que perda). */
@@ -40,6 +40,19 @@ describe('rede neural', () => {
     expect(p2.biases.y).toBe(p1.biases.y);
   });
 
+  it('cabo congelado não muda no treino; ativação por neurônio é respeitada', () => {
+    const base = fullyConnected(['a', 'b'], [2], ['y']);
+    const t = { ...base, frozen: ['a->h0_0'], acts: { h0_1: 'relu' as const } };
+    const p0 = initParams(t, 2);
+    const data = [{ inputs: [0, 1], targets: [1] }, { inputs: [1, 0], targets: [0] }];
+    const tr = new Trainer(t, p0, data, { learningRate: 0.1, epochs: 30, activation: 'tanh' }).runAll();
+    expect(tr.params.weights['a->h0_0']).toBe(p0.weights['a->h0_0']);
+    expect(tr.params.weights['b->h0_0']).not.toBe(p0.weights['b->h0_0']);
+    const z = forward(t, p0, { a: 2, b: -3 }, 'tanh');
+    expect(z.values.h0_0).toBeCloseTo(Math.tanh(z.sums.h0_0)); // padrão do treino
+    expect(z.values.h0_1).toBeCloseTo(z.sums.h0_1 > 0 ? z.sums.h0_1 : 0.01 * z.sums.h0_1); // relu escolhida no neurônio
+  });
+
   it('dropout e L2 treinam sem explodir', () => {
     const m = MISSIONS.find((x) => x.id === 'xor')!;
     const t = fullyConnected(m.inputs, [4], m.outputs);
@@ -67,7 +80,10 @@ describe('missões', () => {
 
     it(`${m.id}: a solução de referência cabe no orçamento e vence com 2★ na maioria das sementes`, () => {
       const ref = m.reference;
-      expect(networkCost(ref.topology)).toBeLessThanOrEqual(m.budget);
+      expect(energyCost(ref.topology, m.extraInputs)).toBeLessThanOrEqual(m.budget);
+      expect(m.energy).toBeGreaterThan(m.budget);
+      // Nenhum cabo da referência liga sensor direto em ação.
+      for (const [a, b] of ref.topology.links) expect(m.inputs.concat(m.extraInputs ?? []).includes(a) && m.outputs.includes(b)).toBe(false);
       let good = 0;
       for (let seed = 1; seed <= 10; seed++) {
         const r = attempt(m, ref.topology, seed, ref.earlyStop, { ...m.defaults, ...ref.hyper });
@@ -76,14 +92,23 @@ describe('missões', () => {
       expect(good).toBeGreaterThanOrEqual(5);
     });
 
-    const direct = fullyConnected(m.inputs, [], m.outputs);
-    if (m.needsHidden) {
-      it(`${m.id}: ligar sensores direto nas ações NÃO resolve`, () => {
-        for (let seed = 1; seed <= 5; seed++) expect(attempt(m, direct, seed, false, { ...m.defaults, epochs: 800 }).win).toBe(false);
+    const min = m.minHidden ?? 1;
+    if (min > 1) {
+      it(`${m.id}: com ${min - 1} neurônio(s) oculto(s) a rede NÃO resolve`, () => {
+        // Só com os sensores básicos (no Alvo, com os derivados: é a rota de referência).
+        const ins = m.id === 'alvo' ? [...m.inputs, ...(m.extraInputs ?? [])] : m.inputs;
+        const small = fullyConnected(ins, [min - 1], m.outputs);
+        let twoStars = 0;
+        for (let seed = 1; seed <= 5; seed++) {
+          const r = attempt(m, small, seed, false, { ...m.defaults, epochs: 800 });
+          if (r.win && r.loss <= m.targetLoss) twoStars++;
+        }
+        expect(twoStars).toBeLessThanOrEqual(1);
       });
-    } else if (m.inputs.length > 1 && m.id !== 'fronteira') {
-      it(`${m.id}: ligar tudo em tudo estoura o orçamento (sem 3★ de graça)`, () => {
-        expect(networkCost(direct)).toBeGreaterThan(m.budget);
+    }
+    if (['bercario', 'triagem', 'corredor', 'captcha'].includes(m.id)) {
+      it(`${m.id}: ligar TODOS os sensores estoura o limiar de eficiência`, () => {
+        expect(energyCost(fullyConnected(m.inputs, [min], m.outputs))).toBeGreaterThan(m.budget);
       });
     }
   }

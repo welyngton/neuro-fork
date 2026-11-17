@@ -19,39 +19,46 @@ MENU (opções + mapa de missões)
             └────────────┴───────────────┘   (pode voltar a qualquer momento)
 ```
 
-| # | Missão | Simulação | Conceito | Solução de referência (custo) |
-|---|--------|-----------|----------|-------------------------------|
-| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único | 1 → 1 (1) |
-| 2 | Triagem | só quadrado grande vai no buraco B | porta E, sensor inútil | 2 cabos, sem a "cor" (2) |
-| 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação | x, y → 1 (2) |
-| 4 | Corredor de Dados | atravessar um corredor sem bater | argmax, escolha de sensores | 5 cabos (5) |
-| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta | 2 → 2 → 1 (8) |
-| 6 | Quadrantes | invasores em cantos opostos | XOR contínuo | 2 → 3 → 1 (12) |
-| 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 10 cabos (10) |
-| 8 | Ilha | invasores numa ilha central | fronteira fechada / atributos | 2 → 4 → 1 (16) ou x², y² (2) |
-| 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído | cantos → 2 → 1 (6) |
-| 10 | Duas Luas | frotas em meia-lua entrelaçadas | overfitting, parada antecipada | 2 → 4 → 1 (16) |
-| 11 | Alvo | invasores em anel | engenharia de atributos | x², y² → 2 → 1 (8) |
-| 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa — zera o jogo | 3 → 3 → 4 (24) |
+| # | Missão | Simulação | Conceito |
+|---|--------|-----------|----------|
+| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único, sensores inúteis |
+| 2 | Triagem | só quadrado grande vai no buraco B | porta E, seleção de atributos |
+| 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação |
+| 4 | Corredor de Dados | atravessar um corredor sem bater | várias ações (argmax) |
+| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta com 2 neurônios |
+| 6 | Quadrantes | invasores em cantos opostos | XOR contínuo |
+| 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações |
+| 8 | Ilha | invasores numa ilha central | fronteira fechada / atributos |
+| 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído |
+| 10 | Duas Luas | frotas em meia-lua entrelaçadas | overfitting, parada antecipada |
+| 11 | Alvo | invasores em anel | engenharia de atributos |
+| 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa — zera o jogo |
 
-**Estrelas:** ★ venceu · ★★ perda de validação abaixo da meta · ★★★ custo do desenho (cabos +
-neurônios ocultos) dentro do orçamento. Ligar tudo em tudo nunca dá 3 estrelas: ou não resolve
-(missões que exigem camada oculta) ou estoura o orçamento. Os testes conferem isso missão a missão.
+## Regras de projeto
+
+- **Sensor não se liga direto em ação**: todo sinal passa por pelo menos um neurônio.
+- **Energia**: cada peça custa (cabo 1⚡, neurônio 2⚡, neurônio em camada funda 3⚡, sensor
+  derivado +1⚡) e cada missão tem um teto de bateria, visível no Design.
+- **Estrelas**: vitória, qualidade do aprendizado e eficiência energética. Os limiares ficam
+  em `core/missions/catalog.ts` (`targetLoss`, `budget`) e **não aparecem no jogo**; a tela de
+  resultado mostra só a energia usada, a perda final e uma provocação.
+- Os testes (`core.test.ts`) garantem por missão: a solução de referência cabe no limiar e vence;
+  com menos neurônios que `minHidden` não vence; ligar todos os sensores estoura o limiar quando há
+  sensor inútil.
 
 ## Progressão
 
+- **Ferramentas de Design liberadas pelo mapa** (`core/progression/tools.ts`): ATIVAÇÃO por
+  neurônio (após a Triagem), SONDA (após a Fronteira), PODA do cabo mais fraco (após o XOR) e
+  TRAVA de pesos (após o Labirinto).
 - **Loja**: as estrelas compram upgrades — mais encaixes, segunda camada, auto-fiação, sensores
-  derivados (x², y², x·y), rodadas de 800 épocas, outras ativações, parada antecipada, L2 e dropout.
-- **Cartas de treino** (opcionais): antes de cada rodada, duas táticas à vista (decisão) e uma
-  carta do destino virada (sorte ou azar). Os nomes vêm do baralho dos slides do prof. Peng Yaohao:
-  tunagem, GatoNet/dropout, overfit, early stop, stack overflow, transfer learning.
-- **Dicas de conceito**: avisos curtos explicam o que acabou de acontecer (peso, camada oculta,
-  navalha de Occam, overfitting...). Mais frequentes no Design, discretos no Treino e na Simulação.
-- **Lentes do treino**: PERDA (treino x validação), FRONTEIRA (o que a rede responde em cada ponto
-  do plano) e ESPAÇO OCULTO (os exemplos nas coordenadas dos neurônios ocultos; com 3 eixos, em 3D).
-- **Avatar**: 5 modelos (incluindo a GatoNet) e 6 cores liberados pelo total de estrelas; o nível
-  do robô sobe sozinho e acrescenta enfeites.
-- **Conquistas**: 26, com níveis bronze/prata/ouro.
+  derivados (x², y², x·y), bateria de grafeno (+30% de energia), rodadas de 800 épocas, parada
+  antecipada, L2 e dropout.
+- **Cartas de treino**: na metade de cada rodada o treino para e sorteia 2 ou 3 cartas — táticas à
+  vista e uma do destino virada (sorte ou azar). O jogador escolhe uma ou segue sem carta.
+  Os nomes vêm do baralho dos slides do prof. Peng Yaohao.
+- **Dicas de conceito**, **lentes do treino** (perda, fronteira, espaço oculto em 3D), **avatar**
+  (5 modelos, 6 cores, 5 níveis) e **26 conquistas** com níveis bronze/prata/ouro.
 
 ## Rodando
 

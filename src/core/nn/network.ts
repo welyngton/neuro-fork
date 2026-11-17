@@ -30,6 +30,10 @@ export interface Topology {
   outputs: string[];
   /** Cabos. Devem sempre apontar "para frente" (camada menor -> camada maior). */
   links: [string, string][];
+  /** Ativação escolhida por neurônio oculto. Quem não aparece aqui usa a ativação padrão do treino. */
+  acts?: Record<string, Activation>;
+  /** Cabos CONGELADOS (chaves de {@link linkKey}): o treino não altera seus pesos. */
+  frozen?: string[];
 }
 
 /** Números treináveis da rede. */
@@ -83,12 +87,28 @@ export function linkKey(from: string, to: string): string {
   return `${from}->${to}`;
 }
 
+/** Preços, em unidades de energia, de cada peça do desenho. */
+export const PRICE = {
+  /** Cada cabo. */
+  cable: 1,
+  /** Neurônio na 1ª camada oculta. */
+  neuron: 2,
+  /** Neurônio em camadas mais fundas (mais caro: redes profundas custam). */
+  deepNeuron: 3,
+  /** Acréscimo por sensor derivado em uso (x², y², x·y). */
+  derived: 1,
+} as const;
+
 /**
- * Custo do desenho = nº de cabos + nº de neurônios ocultos (uma aproximação do
- * número de parâmetros). É o que a 3ª estrela compara com o orçamento da missão.
+ * Energia gasta pelo desenho: cabos + neurônios (os de camadas fundas custam
+ * mais) + sensores derivados em uso. É o número que o Design mostra na bateria
+ * e que o jogo compara com o teto e com o limiar (oculto) de eficiência.
+ * @param derived ids dos sensores derivados da missão.
  */
-export function networkCost(t: Topology): number {
-  return t.links.length + countHidden(t);
+export function energyCost(t: Topology, derived: readonly string[] = []): number {
+  const used = new Set(t.links.map((l) => l[0]));
+  const neurons = t.hidden.reduce((n, layer, i) => n + layer.length * (i === 0 ? PRICE.neuron : PRICE.deepNeuron), 0);
+  return t.links.length * PRICE.cable + neurons + derived.filter((id) => used.has(id)).length * PRICE.derived;
 }
 
 /** Total de neurônios ocultos do desenho. */
@@ -196,7 +216,7 @@ export function forward(
     sums[id] = z;
     values[id] = activate(z, fn) * (mask?.[id] ?? 1);
   };
-  for (const layer of t.hidden) for (const id of layer) run(id, hiddenFn);
+  for (const layer of t.hidden) for (const id of layer) run(id, t.acts?.[id] ?? hiddenFn);
   const outputs: Record<string, number> = {};
   for (const id of t.outputs) {
     run(id, 'sigmoid');
@@ -312,8 +332,9 @@ export function trainEpoch(
         for (const to of out.get(id) ?? []) sum += (p.weights[linkKey(id, to)] ?? 0) * (delta[to] ?? 0);
         const m = mask?.[id] ?? 1;
         // Com máscara, `values` já vem multiplicado; a derivada usa a ativação "crua".
-        const raw = m ? r.values[id] / m : activate(r.sums[id], hyper.activation);
-        delta[id] = sum * m * activateDeriv(r.sums[id], raw, hyper.activation);
+        const fn = t.acts?.[id] ?? hyper.activation;
+        const raw = m ? r.values[id] / m : activate(r.sums[id], fn);
+        delta[id] = sum * m * activateDeriv(r.sums[id], raw, fn);
       }
     }
     for (const [a, b] of t.links) gw[linkKey(a, b)] += (delta[b] ?? 0) * (r.values[a] ?? 0);
@@ -335,9 +356,11 @@ export function trainEpoch(
   };
   const weights: Record<string, number> = {};
   const biases: Record<string, number> = {};
+  const frozen = new Set(t.frozen ?? []);
   for (const k of Object.keys(gw)) {
     const w = p.weights[k] ?? 0;
-    weights[k] = w - step(gw[k] / n + (hyper.l2 ?? 0) * w, k, mom.w, mom.vw);
+    // Cabo congelado: o peso fica como está (ajuste fino / transfer learning).
+    weights[k] = frozen.has(k) ? w : w - step(gw[k] / n + (hyper.l2 ?? 0) * w, k, mom.w, mom.vw);
   }
   for (const id of nodes) biases[id] = (p.biases[id] ?? 0) - step(gb[id] / n, id, mom.b, mom.vb);
   return { params: { weights, biases }, loss: count ? total / count : 1 };

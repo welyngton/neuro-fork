@@ -1,7 +1,8 @@
 /**
  * Teste de fumaça: abre o jogo num Chrome headless e joga as 12 missões de
  * ponta a ponta com a solução de referência de cada uma (comprando os upgrades
- * que ela exige), além de visitar loja, avatar, conquistas, cartas e lentes.
+ * que ela exige), além de visitar loja, avatar, conquistas, o sorteio de cartas
+ * do meio do treino, a sonda do Design e as lentes do treino.
  * Salva capturas em ./screenshots e falha se houver erro no console.
  *
  * Uso: npm run build && npx vite preview --port 4173 &  node scripts/smoke.mjs
@@ -36,24 +37,28 @@ const goto = async (page, key, data) => {
 const page = await open(1280, 720);
 await shot(page, '01-menu');
 
-// Edição manual no Design (arrastar cabo, criar neurônio, toque-toque, borracha).
+// Edição manual no Design: neurônio, cabo arrastado, toque-toque, cabo direto
+// sensor->ação (proibido) e borracha.
 await goto(page, 'Design', { missionId: 'bercario' });
 {
   const info = () => page.evaluate(() => { const s = window.__game.scene.getScene('Design'); return { a: s.view.posOf('cantos'), b: s.view.posOf('buraco_b'), h: s.view.posOf('h0_0'), links: s.board.links.length, neuron: s.board.hidden[0][0] }; });
   const p = await info();
-  await page.mouse.move(p.a.x, p.a.y); await page.mouse.down(); await page.mouse.move((p.a.x + p.b.x) / 2, p.a.y + 40, { steps: 4 }); await page.mouse.move(p.b.x, p.b.y, { steps: 4 }); await page.mouse.up();
   await page.mouse.click(p.h.x, p.h.y);
+  await page.mouse.move(p.a.x, p.a.y); await page.mouse.down(); await page.mouse.move((p.a.x + p.h.x) / 2, p.a.y + 40, { steps: 4 }); await page.mouse.move(p.h.x, p.h.y, { steps: 4 }); await page.mouse.up();
   let q = await info();
-  if (q.links !== 1 || !q.neuron) throw new Error('arrastar cabo / criar neurônio falhou: ' + JSON.stringify(q));
+  if (q.links !== 1 || !q.neuron) throw new Error('criar neurônio / arrastar cabo falhou: ' + JSON.stringify(q));
   await page.mouse.click(p.h.x, p.h.y); await page.mouse.click(p.b.x, p.b.y);
   q = await info();
   if (q.links !== 2) throw new Error('toque-toque falhou');
+  await page.mouse.move(p.a.x, p.a.y); await page.mouse.down(); await page.mouse.move(p.b.x, p.b.y, { steps: 6 }); await page.mouse.up();
+  q = await info();
+  if (q.links !== 2) throw new Error('cabo direto sensor->ação deveria ser recusado');
   await page.waitForTimeout(600);
   await shot(page, '02-design-dicas');
   await page.keyboard.press('3'); await page.mouse.click(p.h.x, p.h.y); await page.keyboard.press('1');
   q = await info();
-  if (q.links !== 1 || q.neuron) throw new Error('borracha falhou: ' + JSON.stringify(q));
-  console.log('edição manual ok');
+  if (q.links !== 0 || q.neuron) throw new Error('borracha falhou: ' + JSON.stringify(q));
+  console.log('edição manual ok (cabo direto recusado)');
 }
 
 const ids = await page.evaluate(() => window.__neuro.MISSIONS.map((m) => m.id));
@@ -77,7 +82,17 @@ for (const id of ids) {
     if (attempt === 1) await shot(page, `03-design-${id}`);
     await goto(page, 'Train', { missionId: id });
     await page.mouse.click(640, 668); // TREINAR
-    await page.waitForFunction(() => { const s = window.__game.scene.getScene('Train'); return !s.running && s.trainer.epoch > 0; }, null, { timeout: 180000 });
+    // A rodada para na metade para o sorteio de cartas: na 1ª missão fotografa e
+    // escolhe a 1ª carta; nas outras segue sem carta (o teste quer a referência pura).
+    for (;;) {
+      await page.waitForFunction(() => { const g = window.__game; const s = g.scene.getScene('Train'); return g.registry.get('drawOpen') || (!s.running && s.trainer.epoch > 0); }, null, { timeout: 180000 });
+      const open = await page.evaluate(() => window.__game.registry.get('drawOpen'));
+      if (!open) break;
+      await page.waitForTimeout(900);
+      if (id === 'bercario' && attempt === 1) await shot(page, '04a-sorteio-cartas');
+      await page.evaluate((pick) => window.__game.scene.getScene('Train').resolveDraw(pick), id === 'bercario' ? 0 : -1);
+      await page.waitForTimeout(id === 'bercario' ? 2600 : 200);
+    }
     await page.waitForTimeout(400);
     if (attempt === 1) await shot(page, `04-train-${id}`);
     if (id === 'quadrantes' && attempt === 1) {
@@ -85,8 +100,12 @@ for (const id of ids) {
       await page.waitForTimeout(500); await shot(page, '04b-lente-fronteira');
       await page.evaluate(() => window.__game.scene.getScene('Train').setLens('space'));
       await page.waitForTimeout(500); await shot(page, '04c-lente-espaco');
-      await page.evaluate(() => window.__game.scene.getScene('Train').openCards());
-      await page.waitForTimeout(500); await shot(page, '04d-cartas');
+    }
+    if (id === 'ilha' && attempt === 1) {
+      await goto(page, 'Design', { missionId: id });
+      await page.waitForTimeout(1200); await shot(page, '04d-design-ferramentas');
+      await page.evaluate(() => window.__game.scene.getScene('Design').openProbe('h0_0'));
+      await page.waitForTimeout(500); await shot(page, '04e-sonda');
     }
     await goto(page, 'Simulation', { missionId: id });
     await page.waitForTimeout(1800);

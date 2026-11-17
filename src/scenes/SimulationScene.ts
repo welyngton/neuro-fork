@@ -16,7 +16,7 @@ import { Blueprint, boardToTopology } from '../core/missions/board';
 import { FINAL_MISSION_ID, getMission } from '../core/missions/catalog';
 import { SimResult, runMission } from '../core/missions/runMission';
 import { MissionDef } from '../core/missions/types';
-import { Topology, countHidden, forward, networkCost, reconcileParams } from '../core/nn/network';
+import { Topology, countHidden, energyCost, forward, reconcileParams } from '../core/nn/network';
 import { getCard } from '../core/progression/cards';
 import { Stars, calculateStars } from '../core/scoring';
 import { t } from '../services/i18n';
@@ -118,7 +118,7 @@ export class SimulationScene extends BaseScene {
     const d = state.design(m.id);
     const win = this.result.success;
     const hidden = countHidden(this.topology);
-    const cost = networkCost(this.topology);
+    const cost = energyCost(this.topology, m.extraInputs);
     const stars: Stars = calculateStars({ success: win, loss: d.loss, targetLoss: m.targetLoss, cost, budget: m.budget });
     const isFinal = m.id === FINAL_MISSION_ID;
     state.recordResult(m.id, stars, isFinal);
@@ -180,15 +180,12 @@ export class SimulationScene extends BaseScene {
     layer.add(bigStars);
     bigStars.setStars(stars, true);
 
-    // Critérios das três estrelas.
-    const criteria: [boolean, string][] = [
-      [stars >= 1, t('sim.star1')],
-      [stars >= 2, `${t('sim.star2', { v: m.targetLoss })}  (${d.loss.toFixed(3)})`],
-      [stars >= 3, t('sim.star3', { n: m.budget, c: cost })],
-    ];
-    criteria.forEach(([ok, label], i) => {
-      layer.add(body(this, px + 70, py + 204 + i * 36, `${ok ? '★' : '☆'}  ${label}`, 22, ok ? C.yellow : C.dim));
-    });
+    // Os critérios das estrelas NÃO são revelados: só os números da sua rede
+    // e uma provocação diferente conforme o resultado.
+    const facts = `⚡ ${t('sim.energyUsed', { n: cost })}   ·   ${t('sim.lossFinal', { v: d.loss.toFixed(3) })}`;
+    layer.add(body(this, this.W / 2, py + 214, facts, 22, C.text).setOrigin(0.5));
+    const tease = stars === 3 ? 'sim.teaseTop' : stars > 0 ? `sim.teaseMid${Phaser.Math.Between(1, 4)}` : 'sim.teaseZero';
+    layer.add(body(this, this.W / 2, py + 262, t(tease), 20, C.violet).setOrigin(0.5).setWordWrapWidth(pw - 80).setAlign('center'));
 
     const by = py + ph - 62;
     const buttons: [string, number, () => void][] = [[t('sim.retry'), C.cyan, () => this.scene.restart()]];

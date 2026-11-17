@@ -1,10 +1,10 @@
 /**
  * @module core/progression/cards
  *
- * Cartas de treino (opcionais). Antes de cada rodada o jogador pode abrir a
- * mesa: aparecem DUAS cartas de tática viradas para cima (uma decisão, cada
- * uma com seu preço) e UMA carta do destino virada para baixo (sorte ou azar).
- * A carta escolhida vale só para a próxima rodada de treino.
+ * Cartas de treino. No MEIO de cada rodada o treino para e o jogo sorteia 2
+ * ou 3 cartas: táticas viradas para cima (uma decisão, cada uma com seu preço)
+ * e uma carta do destino virada para baixo (sorte ou azar). O jogador escolhe
+ * UMA — ou segue sem carta — e o efeito vale para o resto da rodada.
  *
  * Cada carta é um conceito de ML/deep learning em forma de regra — os nomes
  * vêm do baralho proposto nos slides do prof. Peng (tunagem, dropout/GatoNet,
@@ -15,11 +15,11 @@
  */
 export type CardKind = 'tatica' | 'sorte' | 'azar';
 
-/** Modificadores de UMA rodada de treino. Valores neutros em {@link NO_MODS}. */
+/** Modificadores aplicados no meio de uma rodada. Valores neutros em {@link NO_MODS}. */
 export interface RunMods {
   /** Multiplica a taxa de aprendizado. */
   lrMul: number;
-  /** Multiplica o número de épocas da rodada. */
+  /** Multiplica as épocas que FALTAM na rodada. */
   epochsMul: number;
   /** Soma à regularização L2. */
   l2Add: number;
@@ -33,13 +33,13 @@ export interface RunMods {
   augment: boolean;
   /** Zera os cabos de entrada de um neurônio oculto ao acaso. */
   killNeuron: boolean;
-  /** Multiplica todos os pesos no início da rodada. */
+  /** Multiplica todos os pesos na hora. */
   weightScale: number;
-  /** Sorteia N inicializações e fica com a de menor perda (0 = não sorteia). */
-  bestOfSeeds: number;
+  /** Volta já para os melhores pesos vistos nesta rodada. */
+  rewind: boolean;
   /** Ao terminar, volta aos melhores pesos vistos na validação. */
   earlyStop: boolean;
-  /** Começa a rodada dos melhores pesos já salvos nesta missão. */
+  /** Troca os pesos atuais pelos melhores já salvos nesta missão. */
   transfer: boolean;
 }
 
@@ -53,7 +53,7 @@ export const NO_MODS: RunMods = {
   augment: false,
   killNeuron: false,
   weightScale: 1,
-  bestOfSeeds: 0,
+  rewind: false,
   earlyStop: false,
   transfer: false,
 };
@@ -74,7 +74,7 @@ export const CARDS: CardDef[] = [
   { id: 'transfer', kind: 'tatica', mods: { transfer: true } },
   { id: 'augmentation', kind: 'tatica', mods: { augment: true } },
   // Sorte.
-  { id: 'semente', kind: 'sorte', mods: { bestOfSeeds: 8 } },
+  { id: 'rewind', kind: 'sorte', mods: { rewind: true } },
   { id: 'turbo', kind: 'sorte', mods: { lrMul: 1.5, epochsMul: 1.25 } },
   { id: 'foco', kind: 'sorte', mods: { earlyStop: true, epochsMul: 1.5 } },
   // Azar.
@@ -95,14 +95,19 @@ export function modsOf(card: CardDef | undefined): RunMods {
 }
 
 /**
- * Abre a mesa: duas táticas diferentes e uma carta do destino (60% sorte, 40% azar).
+ * Sorteia a mesa do meio do treino: 2 ou 3 cartas, sendo a última sempre a do
+ * destino (60% sorte, 40% azar, virada para baixo) e as demais táticas diferentes.
  * @param rng fonte de aleatoriedade (injetável para testes).
  */
-export function dealCards(rng: () => number = Math.random): { tactics: [CardDef, CardDef]; fate: CardDef } {
+export function dealCards(rng: () => number = Math.random): { tactics: CardDef[]; fate: CardDef } {
   const pick = <T>(list: T[]) => list[Math.floor(rng() * list.length)];
-  const tactics = CARDS.filter((c) => c.kind === 'tatica');
-  const a = pick(tactics);
-  const b = pick(tactics.filter((c) => c !== a));
+  const pool = CARDS.filter((c) => c.kind === 'tatica');
+  const tactics: CardDef[] = [];
+  const n = rng() < 0.5 ? 1 : 2;
+  while (tactics.length < n) {
+    const c = pick(pool.filter((x) => !tactics.includes(x)));
+    tactics.push(c);
+  }
   const fate = pick(CARDS.filter((c) => c.kind === (rng() < 0.6 ? 'sorte' : 'azar')));
-  return { tactics: [a, b], fate };
+  return { tactics, fate };
 }

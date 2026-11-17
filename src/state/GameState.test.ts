@@ -67,10 +67,12 @@ describe('board', () => {
     const m = getMission('xor');
     const bp = blueprintFor(m, capsFor([]));
     const board = boardFromTopology(bp, m.reference.topology);
-    expect(boardToTopology(bp, board)).toEqual(m.reference.topology);
+    expect(boardToTopology(bp, board)).toMatchObject(m.reference.topology);
     const b2 = emptyBoard(bp);
-    b2.links = [['luz_a', 'ativar'], ['ativar', 'luz_a'], ['luz_a', 'h0_0']];
-    expect(boardToTopology(bp, b2).links).toEqual([['luz_a', 'ativar']]);
+    b2.hidden[0][0] = true;
+    // Direto sensor->ação, de trás para frente e para um encaixe vazio: tudo descartado.
+    b2.links = [['luz_a', 'ativar'], ['ativar', 'luz_a'], ['luz_a', 'h0_1'], ['luz_a', 'h0_0'], ['h0_0', 'ativar']];
+    expect(boardToTopology(bp, b2).links).toEqual([['luz_a', 'h0_0'], ['h0_0', 'ativar']]);
   });
 
   it('AUTO liga tudo em tudo e os sensores derivados só aparecem com o upgrade', () => {
@@ -85,13 +87,16 @@ describe('board', () => {
 });
 
 describe('cartas', () => {
-  it('a mesa traz duas táticas diferentes e uma carta do destino', () => {
-    for (let i = 0; i < 30; i++) {
+  it('a mesa traz 2 ou 3 cartas: táticas diferentes e uma do destino', () => {
+    const sizes = new Set<number>();
+    for (let i = 0; i < 60; i++) {
       const d = dealCards();
-      expect(d.tactics[0].kind).toBe('tatica');
-      expect(d.tactics[0]).not.toBe(d.tactics[1]);
+      sizes.add(d.tactics.length + 1);
+      expect(d.tactics.every((c) => c.kind === 'tatica')).toBe(true);
+      expect(new Set(d.tactics).size).toBe(d.tactics.length);
       expect(['sorte', 'azar']).toContain(d.fate.kind);
     }
+    expect([...sizes].sort()).toEqual([2, 3]);
     expect(modsOf(undefined).lrMul).toBe(1);
   });
 

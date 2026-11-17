@@ -12,6 +12,8 @@
  * {@link render} a cada frame (os pontinhos que correm pelos cabos são animados).
  *
  * Formas: sensor = losango amarelo · neurônio = hexágono violeta · ação = placa verde.
+ * Dentro do neurônio, o símbolo indica a ativação: triângulo = tanh (padrão),
+ * rampa = ReLU, círculo = sigmoide. Cabo congelado = branco tracejado com cadeado.
  */
 import Phaser from 'phaser';
 import { Blueprint, Board, nodeColumn, slotId } from '../core/missions/board';
@@ -165,6 +167,19 @@ export class NetworkView extends Phaser.GameObjects.Container {
       const thick = w === undefined ? 4 : Phaser.Math.Clamp(2 + Math.abs(w) * 2.2, 2, 13);
       g.lineStyle(thick + 6, color, 0.12).lineBetween(pa.x, pa.y, pb.x, pb.y);
       g.lineStyle(thick, color, 0.85).lineBetween(pa.x, pa.y, pb.x, pb.y);
+      if (this.board.frozen?.includes(linkKey(a, b))) {
+        // Congelado: tracejado branco por cima e um cadeado no meio.
+        const len = Phaser.Math.Distance.Between(pa.x, pa.y, pb.x, pb.y);
+        g.lineStyle(3, 0xffffff, 0.9);
+        for (let d = 0; d < len; d += 16) {
+          const f0 = d / len;
+          const f1 = Math.min(1, (d + 8) / len);
+          g.lineBetween(pa.x + (pb.x - pa.x) * f0, pa.y + (pb.y - pa.y) * f0, pa.x + (pb.x - pa.x) * f1, pa.y + (pb.y - pa.y) * f1);
+        }
+        const mx = (pa.x + pb.x) / 2;
+        const my = (pa.y + pb.y) / 2;
+        g.fillStyle(C.bg).fillRect(mx - 9, my - 4, 18, 14).lineStyle(2, 0xffffff).strokeRect(mx - 9, my - 4, 18, 14).strokeRect(mx - 5, my - 11, 10, 8);
+      }
       // Pulsos correndo do sensor para a ação.
       for (let k = 0; k < 2; k++) {
         const f = (time / 1100 + i * 0.173 + k * 0.5) % 1;
@@ -196,7 +211,14 @@ export class NetworkView extends Phaser.GameObjects.Container {
       g.fillStyle(C.bg).fillPoints(pts, true);
       g.fillStyle(color, 0.15 + act * 0.7).fillPoints(pts, true);
       g.lineStyle(hot ? 6 : 3, hot ? 0xffffff : color).strokePoints(pts, true, true);
-      if (!isIn && !isOut) g.fillStyle(color).fillPoints(offset(regularPoly(3, 8), p.x, p.y), true);
+      if (!isIn && !isOut) {
+        // Símbolo da ativação do neurônio.
+        const fn = this.board.acts?.[id] ?? 'tanh';
+        g.fillStyle(color).lineStyle(3, 0xffffff);
+        if (fn === 'relu') g.lineBetween(p.x - 11, p.y + 6, p.x, p.y + 6).lineBetween(p.x, p.y + 6, p.x + 10, p.y - 9);
+        else if (fn === 'sigmoid') g.fillStyle(0xffffff).fillCircle(p.x, p.y, 7);
+        else g.fillPoints(offset(regularPoly(3, 8), p.x, p.y), true);
+      }
     }
   }
 }

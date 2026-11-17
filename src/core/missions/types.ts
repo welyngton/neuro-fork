@@ -64,8 +64,13 @@ export interface MissionDef {
   outputs: string[];
   /** Perda máxima (na validação, se houver) para a 2ª estrela. */
   targetLoss: number;
-  /** Custo máximo do desenho (cabos + neurônios ocultos) para a 3ª estrela. */
+  /**
+   * Limiar de eficiência: energia máxima do desenho para a 3ª estrela.
+   * NÃO é mostrado ao jogador — descobrir o desenho enxuto faz parte do jogo.
+   */
   budget: number;
+  /** Teto de energia: o Design não deixa gastar mais do que isto (visível na bateria). */
+  energy: number;
   /** Hiperparâmetros iniciais sugeridos. */
   defaults: Hyper;
   /** Exemplos de TREINO (podem conter ruído e rótulos trocados). */
@@ -78,8 +83,11 @@ export interface MissionDef {
    * que ela conta com a parada antecipada (melhores pesos na validação).
    */
   reference: { topology: Topology; hyper?: Partial<Hyper>; earlyStop?: boolean; needs?: string[] };
-  /** `true` = ligar sensores direto nas ações NÃO resolve (os testes conferem). */
-  needsHidden?: boolean;
+  /**
+   * Menor número de neurônios ocultos que resolve (padrão 1). Os testes conferem
+   * que uma rede densa com um a menos NÃO vence.
+   */
+  minHidden?: number;
   /** Casos da simulação (skins de classificação). */
   cases?: ClassCase[];
   /** Fração mínima de acertos (padrão 1). */

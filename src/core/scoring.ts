@@ -3,8 +3,10 @@
  * Regra de estrelas:
  *  - ★     : venceu a simulação;
  *  - ★★    : venceu E a perda final (de validação) ficou abaixo da meta da missão;
- *  - ★★★   : idem, com o custo do desenho (cabos + neurônios ocultos) dentro do
- *            orçamento — a "navalha de Occam": a rede mais simples que resolve.
+ *  - ★★★   : idem, com a energia do desenho dentro do limiar de eficiência da
+ *            missão — a "navalha de Occam": a rede mais simples que resolve.
+ *
+ * Os critérios NÃO são exibidos ao jogador; o resultado só dá uma pista vaga.
  */
 export type Stars = 0 | 1 | 2 | 3;
 
@@ -12,7 +14,7 @@ export interface StarInput {
   success: boolean;
   loss: number;
   targetLoss: number;
-  /** Custo do desenho ({@link networkCost}). */
+  /** Energia do desenho ({@link energyCost}). */
   cost: number;
   budget: number;
 }

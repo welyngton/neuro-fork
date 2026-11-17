@@ -4,11 +4,14 @@
  * Catálogo das 12 missões, na ordem de dificuldade — do "brinquedo de bebê"
  * (encaixar formas) até zerar o jogo no Teste de Turing.
  *
+ * Regra geral do jogo: sensores NÃO se ligam direto nas ações — todo sinal
+ * passa por pelo menos um neurônio (ver `isAllowedLink` em `board.ts`).
+ *
  * Princípios de dificuldade (conferidos em `core.test.ts`):
- *  - toda missão tem uma solução de referência DENTRO do orçamento;
- *  - nas missões `needsHidden`, ligar sensores direto nas ações não vence;
- *  - nas demais, ligar TUDO em tudo vence mas estoura o orçamento: a 3ª estrela
- *    exige escolher quais sensores importam (seleção de atributos).
+ *  - toda missão tem uma solução de referência DENTRO do limiar de eficiência (`budget`);
+ *  - com menos neurônios que `minHidden`, a rede não vence;
+ *  - ligar TODOS os sensores custa mais que o limiar sempre que há sensor inútil:
+ *    a 3ª estrela exige escolher o que ligar (seleção de atributos).
  *
  * Convenções de dados:
  *  - `cantos` = número de lados da forma ÷ 3 (círculo 0 · triângulo 1 · quadrado 1,33 · hexágono 2);
@@ -29,13 +32,6 @@ export function fullyConnected(inputs: string[], hiddenSizes: number[], outputs:
   return { inputs, hidden, outputs, links };
 }
 
-/** Rede sem camada oculta com cabos escolhidos a dedo: `wires[ação] = sensores ligados nela`. */
-function sparse(inputs: string[], outputs: string[], wires: Record<string, string[]>): Topology {
-  const links: [string, string][] = [];
-  for (const out of outputs) for (const from of wires[out] ?? []) links.push([from, out]);
-  return { inputs, hidden: [], outputs, links };
-}
-
 /** Rede densa que usa só ALGUNS sensores (os demais ficam sem cabo). */
 function denseFrom(inputs: string[], used: string[], hiddenSizes: number[], outputs: string[]): Topology {
   return { ...fullyConnected(used, hiddenSizes, outputs), inputs };
@@ -47,11 +43,14 @@ const point = (inp: Record<string, number>, targets: number[]): DataPoint => ({ 
 
 /* ------------------------------------------------------------------ 1. Berçário */
 const bercarioItems: SorterVisual['shape'][] = ['circle', 'square', 'triangle', 'circle', 'square', 'circle'];
-const bercarioCases: ClassCase[] = bercarioItems.map((shape) => ({
-  inputs: { cantos: SIDES[shape] / 3 },
+// Além de "cantos", o robô tem dois sensores que não dizem nada sobre a regra.
+const bercarioCases: ClassCase[] = bercarioItems.map((shape, i) => ({
+  inputs: { cantos: SIDES[shape] / 3, grande: i % 2, cor: i % 3 === 0 ? 1 : 0 },
   expected: shape === 'circle' ? 0 : 1,
-  visual: { shape, big: true } satisfies SorterVisual,
+  visual: { shape, big: i % 2 === 1, alt: i % 3 === 0 } satisfies SorterVisual,
 }));
+const bercarioTrain: DataPoint[] = [];
+for (const c of [0, 1, 4 / 3]) for (const g of [0, 1]) for (const cor of [0, 1]) bercarioTrain.push(point({ cantos: c, grande: g, cor }, [c ? 1 : 0]));
 
 /* ------------------------------------------------------------------ 2. Triagem (E lógico + sensor inútil) */
 const triagemItems: [SorterVisual['shape'], number, number][] = [
@@ -173,13 +172,14 @@ export const MISSIONS: MissionDef[] = [
     pos: { x: 0.05, y: 0.8 },
     requires: [],
     skin: 'sorter',
-    inputs: ['cantos'],
+    inputs: ['cantos', 'grande', 'cor'],
     outputs: ['buraco_b'],
     targetLoss: 0.05,
-    budget: 1,
+    budget: 4,
+    energy: 12,
     defaults: { learningRate: 0.1, epochs: 100, activation: 'tanh' },
-    train: [point({ cantos: 0 }, [0]), point({ cantos: 1 }, [1]), point({ cantos: 4 / 3 }, [1])],
-    reference: { topology: fullyConnected(['cantos'], [], ['buraco_b']) },
+    train: bercarioTrain,
+    reference: { topology: denseFrom(['cantos', 'grande', 'cor'], ['cantos'], [1], ['buraco_b']) },
     cases: bercarioCases,
   },
   {
@@ -190,10 +190,11 @@ export const MISSIONS: MissionDef[] = [
     inputs: ['cantos', 'grande', 'cor'],
     outputs: ['buraco_b'],
     targetLoss: 0.05,
-    budget: 2,
+    budget: 5,
+    energy: 14,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: triagemTrain,
-    reference: { topology: sparse(['cantos', 'grande', 'cor'], ['buraco_b'], { buraco_b: ['cantos', 'grande'] }) },
+    reference: { topology: denseFrom(['cantos', 'grande', 'cor'], ['cantos', 'grande'], [1], ['buraco_b']) },
     cases: triagemCases,
   },
   {
@@ -205,11 +206,12 @@ export const MISSIONS: MissionDef[] = [
     extraInputs: FIELD_EXTRA,
     outputs: ['invasor'],
     targetLoss: 0.06,
-    budget: 2,
+    budget: 5,
+    energy: 14,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: fronteira.train,
     validation: fronteira.validation,
-    reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [], ['invasor']) },
+    reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [1], ['invasor']) },
     cases: fronteira.cases,
     passRatio: 0.9,
   },
@@ -221,17 +223,13 @@ export const MISSIONS: MissionDef[] = [
     inputs: WALL_IN,
     outputs: WALL_OUT,
     targetLoss: 0.05,
-    budget: 5,
+    budget: 14,
+    energy: 30,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: wallTrain,
-    // "parede_dir" é um sensor inútil para esta política: 5 cabos bastam.
-    reference: {
-      topology: sparse(WALL_IN, WALL_OUT, {
-        andar: ['parede_frente'],
-        virar_esq: ['parede_frente', 'parede_esq'],
-        virar_dir: ['parede_frente', 'parede_esq'],
-      }),
-    },
+    // "parede_dir" é um sensor inútil para esta política.
+    reference: { topology: denseFrom(WALL_IN, ['parede_frente', 'parede_esq'], [2], WALL_OUT) },
+    minHidden: 2,
     maze: {
       grid: [
         '#############',
@@ -254,11 +252,12 @@ export const MISSIONS: MissionDef[] = [
     inputs: ['luz_a', 'luz_b'],
     outputs: ['ativar'],
     targetLoss: 0.05,
-    budget: 8,
+    budget: 10,
+    energy: 22,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: [point({ luz_a: 0, luz_b: 0 }, [0]), point({ luz_a: 0, luz_b: 1 }, [1]), point({ luz_a: 1, luz_b: 0 }, [1]), point({ luz_a: 1, luz_b: 1 }, [0])],
     reference: { topology: fullyConnected(['luz_a', 'luz_b'], [2], ['ativar']) },
-    needsHidden: true,
+    minHidden: 2,
     cases: xorCases,
   },
   {
@@ -270,12 +269,13 @@ export const MISSIONS: MissionDef[] = [
     extraInputs: FIELD_EXTRA,
     outputs: ['invasor'],
     targetLoss: 0.08,
-    budget: 12,
+    budget: 15,
+    energy: 32,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: quadrantes.train,
     validation: quadrantes.validation,
     reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [3], ['invasor']) },
-    needsHidden: true,
+    minHidden: 3,
     cases: quadrantes.cases,
     passRatio: 0.9,
   },
@@ -287,17 +287,12 @@ export const MISSIONS: MissionDef[] = [
     inputs: BEACON_IN,
     outputs: BEACON_OUT,
     targetLoss: 0.05,
-    budget: 10,
+    budget: 20,
+    energy: 44,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: beaconTrain,
-    reference: {
-      topology: sparse(BEACON_IN, BEACON_OUT, {
-        andar: ['farol_frente', 'firewall_frente'],
-        hackear: ['farol_frente', 'firewall_frente'],
-        virar_esq: ['farol_frente', 'farol_esq', 'farol_dir'],
-        virar_dir: ['farol_frente', 'farol_esq', 'farol_dir'],
-      }),
-    },
+    reference: { topology: fullyConnected(BEACON_IN, [2], BEACON_OUT) },
+    minHidden: 2,
     maze: {
       grid: [
         '###############',
@@ -323,7 +318,8 @@ export const MISSIONS: MissionDef[] = [
     extraInputs: FIELD_EXTRA,
     outputs: ['invasor'],
     targetLoss: 0.08,
-    budget: 16,
+    budget: 20,
+    energy: 40,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: ilha.train,
     validation: ilha.validation,
@@ -334,7 +330,7 @@ export const MISSIONS: MissionDef[] = [
       earlyStop: true,
       needs: ['epochs', 'earlystop'],
     },
-    needsHidden: true,
+    minHidden: 3,
     cases: ilha.cases,
     passRatio: 0.9,
   },
@@ -346,12 +342,13 @@ export const MISSIONS: MissionDef[] = [
     inputs: ['cantos', 'ruido'],
     outputs: ['marcar'],
     targetLoss: 0.05,
-    budget: 6,
+    budget: 8,
+    energy: 22,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: captchaTrain,
     // 3 estrelas exigem deixar o sensor "ruido" sem cabo.
     reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']) },
-    needsHidden: true,
+    minHidden: 2,
     cases: buildCaptcha(),
   },
   {
@@ -363,7 +360,8 @@ export const MISSIONS: MissionDef[] = [
     extraInputs: FIELD_EXTRA,
     outputs: ['invasor'],
     targetLoss: 0.08,
-    budget: 16,
+    budget: 20,
+    energy: 44,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: luas.train,
     validation: luas.validation,
@@ -373,7 +371,7 @@ export const MISSIONS: MissionDef[] = [
       earlyStop: true,
       needs: ['epochs', 'earlystop'],
     },
-    needsHidden: true,
+    minHidden: 3,
     cases: luas.cases,
     passRatio: 0.9,
   },
@@ -387,6 +385,7 @@ export const MISSIONS: MissionDef[] = [
     outputs: ['invasor'],
     targetLoss: 0.1,
     budget: 12,
+    energy: 50,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: alvo.train,
     validation: alvo.validation,
@@ -396,7 +395,7 @@ export const MISSIONS: MissionDef[] = [
       hyper: { learningRate: 0.03, epochs: 800 },
       needs: ['features', 'epochs'],
     },
-    needsHidden: true,
+    minHidden: 2,
     cases: alvo.cases,
     passRatio: 0.88,
   },
@@ -408,11 +407,12 @@ export const MISSIONS: MissionDef[] = [
     inputs: TURING_IN,
     outputs: TURING_OUT,
     targetLoss: 0.05,
-    budget: 26,
+    budget: 27,
+    energy: 56,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: turingTrain,
     reference: { topology: fullyConnected(TURING_IN, [3], TURING_OUT) },
-    needsHidden: true,
+    minHidden: 3,
     cases: turingCases,
   },
 ];
