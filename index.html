@@ -1,29 +1,23 @@
 <!doctype html>
+<!--
+  Página de entrada do GitHub Pages (que serve a raiz da branch main).
+  O jogo compilado fica em ./dist — este arquivo apenas redireciona para lá.
+  O HTML de verdade do jogo é src/index.html (entrada do Vite).
+-->
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#07060f" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="icon" href="icon.svg" type="image/svg+xml" />
-    <link rel="manifest" href="manifest.webmanifest" />
-    <meta
-      name="description"
-      content="NeuroBot — jogo web para aprender redes neurais: desenhe o cérebro do robô, treine e simule."
-    />
-    <title>NeuroBot — Laboratório de Redes Neurais</title>
+    <title>NeuroBot</title>
+    <meta http-equiv="refresh" content="0; url=./dist/" />
+    <script>
+      location.replace('./dist/' + location.search + location.hash);
+    </script>
+    <style>
+      body { background: #07060f; color: #00f0ff; font: 16px sans-serif; text-align: center; padding-top: 40vh; }
+      a { color: #ff2bd6; }
+    </style>
   </head>
   <body>
-    <div id="game"></div>
-    <!-- Aviso exibido apenas em telas pequenas na vertical (ver src/styles.css). -->
-    <div id="rotate-hint" aria-live="polite">
-      <div class="rotate-icon"></div>
-      <p>Gire o aparelho<br /><small>Rotate your device</small></p>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
+    <a href="./dist/">Abrir o NeuroBot</a>
   </body>
 </html>

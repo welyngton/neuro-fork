@@ -1,10 +1,5 @@
 {
   "projects": {
-    "default": "neurobot-dev",
-    "dev": "neurobot-dev",
-    "prod": "neurobot-prod",
-    "fpo_ml": "mestradounb-41f50"
-  },
-  "targets": {},
-  "etags": {}
+    "default": "neuro-fork"
+  }
 }

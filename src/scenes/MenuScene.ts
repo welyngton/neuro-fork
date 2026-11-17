@@ -16,7 +16,7 @@
  * Tocar num nó seleciona a missão; INICIAR leva ao Design.
  */
 import Phaser from 'phaser';
-import { analytics, audio, cloudStatus, state } from '../app/services';
+import { analytics, audio, cloud, state } from '../app/services';
 import { MISSIONS, getMission } from '../core/missions/catalog';
 import { MissionDef } from '../core/missions/types';
 import { Robot } from '../entities/Robot';
@@ -127,13 +127,31 @@ export class MenuScene extends BaseScene {
         this.scene.restart();
       },
     });
-    const bh = 58;
-    let y = this.H - 50 - items.length * (bh + 10) + bh / 2;
+    // Conta: login com Google (só aparece se o Firebase estiver configurado).
+    const user = cloud.user;
+    if (cloud.enabled) {
+      items.push({
+        label: user ? t('opt.logout', { name: user.name.split(' ')[0].toUpperCase() }) : t('opt.login'),
+        color: user ? C.dim : C.green,
+        act: (b) => {
+          const job = user ? cloud.signOut() : cloud.signIn().then(() => analytics.track('login', { method: 'google' }));
+          // Ao entrar/sair, `bootServices` reinicia o menu; aqui só tratamos a falha.
+          job.catch(() => {
+            audio.sfx('error');
+            if (b.active) b.setLabel(t('opt.loginError'));
+          });
+        },
+      });
+    }
+    const bh = 52;
+    const gapY = 8;
+    let y = this.H - 46 - items.length * (bh + gapY) + bh / 2;
     for (const it of items) {
       const b: NeonButton = new NeonButton(this, cx, y, SIDE_W - 50, bh, it.label, () => it.act(b), { color: it.color ?? C.cyan, size: 16 });
-      y += bh + 10;
+      y += bh + gapY;
     }
-    body(this, cx, this.H - 36, t(cloudStatus.online ? 'opt.cloudOn' : 'opt.cloudOff'), 16, cloudStatus.online ? C.green : C.dim).setOrigin(0.5);
+    const status = !cloud.enabled ? 'opt.cloudOff' : user ? 'opt.cloudOn' : 'opt.cloudHint';
+    body(this, cx, this.H - 32, t(status), 16, user ? C.green : C.dim).setOrigin(0.5);
   }
 
   /* ------------------------------------------------------------------ mapa */

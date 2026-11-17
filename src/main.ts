@@ -9,6 +9,7 @@ import './styles.css';
 import Phaser from 'phaser';
 import { audio, bootServices } from './app/services';
 import { logicalWidth, watchViewport } from './app/viewport';
+import { installGoogleTag } from './services/googleTag';
 import { BootScene } from './scenes/BootScene';
 import { DesignScene } from './scenes/DesignScene';
 import { EndingScene } from './scenes/EndingScene';
@@ -22,7 +23,7 @@ async function start(): Promise<void> {
   await Promise.all(
     ['700 20px Oxanium', '800 20px Oxanium', '700 20px Rajdhani'].map((f) => document.fonts.load(f).catch(() => undefined)),
   );
-  bootServices();
+  installGoogleTag();
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -39,6 +40,7 @@ async function start(): Promise<void> {
     scene: [BootScene, MenuScene, DesignScene, TrainScene, SimulationScene, EndingScene],
   });
   watchViewport(game);
+  bootServices(game);
 
   // Áudio só pode começar após um gesto do usuário.
   const unlock = () => audio.unlock();

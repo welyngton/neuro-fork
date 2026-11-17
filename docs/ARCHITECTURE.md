@@ -4,6 +4,7 @@
 
 ```
 src/
+├── index.html           HTML do jogo (entrada do Vite; o index.html da RAIZ só redireciona para dist/)
 ├── main.ts              entrada: fontes, serviços, Phaser.Game
 ├── app/
 │   ├── services.ts      monta os serviços globais (state, audio, cloud, analytics)
@@ -16,7 +17,8 @@ src/
 ├── state/GameState.ts   progresso + opções + desenho salvo; persiste em localStorage
 ├── services/
 │   ├── i18n.ts          textos pt-BR / en
-│   ├── FirebaseService.ts   Auth anônimo, Firestore, GA4 (opcional, import dinâmico)
+│   ├── FirebaseService.ts   login Google, Firestore (usuarios/{uid}), Firebase Analytics
+│   ├── googleTag.ts         gtag.js (GA4) e Google Tag Manager
 │   ├── AnalyticsService.ts  fachada de eventos
 │   └── audio/           AudioEngine.ts (sintetizador) · themes.ts (músicas como dados)
 ├── ui/                  COMPONENTES REUTILIZÁVEIS de Phaser

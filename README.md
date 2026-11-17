@@ -42,27 +42,41 @@ npm run dev          # http://localhost:5173 (também acessível pelo celular na
 
 | Comando | O que faz |
 |---------|-----------|
-| `npm run build` | checa tipos e gera `dist/` |
+| `npm run build` | checa tipos e gera `dist/` (que é versionado) |
 | `npm run preview` | serve o `dist/` |
 | `npm test` | testes do núcleo (rede, treino, simulações, estado) |
 | `npm run lint` | ESLint sem avisos |
 | `npm run smoke` | teste de fumaça no Chrome headless (precisa do `preview` rodando na porta 4173) |
 
-## Firebase e Google Analytics (opcional)
+## Publicação (GitHub Pages na `main`)
 
-Sem configuração o jogo salva tudo em `localStorage` e não baixa o SDK do Firebase.
-Para ligar a nuvem, copie `.env.example` para `.env.local` e preencha `VITE_FIREBASE_*`:
+O GitHub Pages serve a branch `main`. O jogo compilado fica **versionado em `dist/`** e o
+`index.html` da raiz só redireciona para `./dist/`. Para publicar uma versão:
 
-- **Auth anônimo + Firestore**: o progresso vai para `users/{uid}/saves/main` (regras em `firestore.rules`);
-- **Analytics (GA4)**: com `VITE_FIREBASE_MEASUREMENT_ID`, os eventos listados em
-  `src/services/AnalyticsService.ts` são enviados em produção.
+```bash
+npm run build        # regenera dist/
+git add -A && git commit -m "..." && git push
+```
 
-Deploy no **GitHub Pages**: o workflow `.github/workflows/pages.yml` publica o build na branch `gh-pages`
-a cada push na `main` (em Settings → Pages, escolha a branch `gh-pages`). A `main` guarda só o código-fonte
-e não funciona se servida diretamente.
+O workflow `.github/workflows/ci.yml` roda lint, testes e build e falha se `dist/` estiver
+desatualizado em relação ao código. O HTML de verdade do jogo é `src/index.html`.
 
-Deploy no Firebase: `npm run deploy:hosting` (pasta `dist`). O workflow em
-`.github/workflows/deploy.yml` roda lint, testes e build; **push na `main` publica em produção**.
+## Firebase e Google Analytics
+
+A configuração de produção está em `.env.production` (projeto Firebase `neuro-fork`).
+Em `npm run dev` nada disso liga, a menos que você crie um `.env.local` (veja `.env.example`).
+
+- **Login com Google** (botão no menu): ao entrar, o jogador é cadastrado em
+  `usuarios/{uid}` (`nome`, `email`, `fotoUrl`, `atualizadoEm`) e o progresso é
+  sincronizado no campo `progresso` do mesmo documento. Sem login, o save é local.
+- **Regras do Firestore**: `firestore.rules` — publique com
+  `npx firebase-tools deploy --only firestore:rules`.
+- **Analytics**: gtag.js no fluxo GA4 `G-BNYB6G6MKG`, contêiner `GTM-K4LDJ39L` e Firebase
+  Analytics (`G-XQPS182BFC`). Os eventos estão listados em `src/services/AnalyticsService.ts`.
+  Nada é enviado a partir de `localhost`.
+
+No console do Firebase é preciso: ativar o provedor **Google** em Authentication, incluir
+`welyngton.github.io` nos **domínios autorizados** e criar o banco **Firestore**.
 
 ## Para quem vai manter
 
@@ -75,4 +89,4 @@ Cada arquivo começa com um bloco `@module` explicando seu papel.
 - React, Pixi, React Flow, Recharts e TensorFlow.js saíram; o treino é backpropagation em TypeScript puro.
 - As 5 fases viraram 7 missões novas; ajuste manual de pesos, quiz/glossário, replay e
   vínculo com conta Google **não** foram portados.
-- O emulador de Firestore embutido deu lugar ao SDK real, carregado sob demanda.
+- O emulador de Firestore embutido deu lugar ao SDK real; o login anônimo deu lugar ao login com Google.
