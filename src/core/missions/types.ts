@@ -65,12 +65,15 @@ export interface MissionDef {
   /** Perda máxima (na validação, se houver) para a 2ª estrela. */
   targetLoss: number;
   /**
-   * Limiar de eficiência: energia máxima do desenho para a 3ª estrela.
-   * NÃO é mostrado ao jogador — descobrir o desenho enxuto faz parte do jogo.
+   * Limiar de eficiência: energia TOTAL (desenho + treino) para a 3ª estrela.
+   * NÃO é mostrado ao jogador — descobrir o desenho e o treino enxutos faz parte do jogo.
+   * No catálogo escreve-se só a parte do desenho; `withTraining` soma a do treino.
    */
   budget: number;
-  /** Teto de energia: o Design não deixa gastar mais do que isto (visível na bateria). */
+  /** Bateria da missão (visível): paga o desenho e, com o que sobra, o treino. */
   energy: number;
+  /** Tanque de água de resfriamento do treino (preenchido por `withTraining`). */
+  water: number;
   /** Hiperparâmetros iniciais sugeridos. */
   defaults: Hyper;
   /** Exemplos de TREINO (podem conter ruído e rótulos trocados). */

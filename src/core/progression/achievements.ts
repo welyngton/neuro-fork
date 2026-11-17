@@ -60,6 +60,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'exagerado', tiers: [1], value: stat('full_board_wins') },
   { id: 'bomba', tiers: [1, 10, 30], value: stat('bombs') },
   { id: 'embaralhador', tiers: [5, 20, 100], value: stat('shuffles') },
+  { id: 'derreteu', tiers: [1, 5], value: stat('overheats') },
 ];
 
 /** Nível atual (0 = bloqueada) de cada conquista. */

@@ -15,6 +15,7 @@ src/
 │   ├── missions/        types.ts · catalog.ts (as 12 missões) · datasets.ts (campos 2D)
 │   │                    board.ts (tabuleiro + planta) · runMission.ts
 │   ├── progression/     upgrades.ts (loja) · tools.ts (ferramentas do mapa) · cards.ts
+│   │                    resources.ts (energia e água do treino)
 │   │                    achievements.ts · avatars.ts
 │   └── scoring.ts       regra das estrelas
 ├── state/GameState.ts   progresso + opções + desenho salvo; persiste em localStorage
@@ -65,8 +66,10 @@ Consequência: bug de regra se conserta e se testa em `core/`; bug visual, em `s
 
 ## Dificuldade — o contrato de cada missão
 
-Cada `MissionDef` declara `energy` (teto de bateria, visível), `budget` (limiar de eficiência da
-3ª estrela, oculto), `reference` (uma solução dentro do limiar) e `minHidden`. A regra de fiação
+Cada `MissionDef` declara `energy` (bateria visível), `budget` (limiar oculto da 3ª estrela),
+`reference` (uma solução dentro do limiar) e `minHidden`. No catálogo esses números cobrem só a
+rede; `withTraining` acrescenta o custo de treinar a referência e calcula o tanque `water`, com as
+fórmulas de `core/progression/resources.ts`. A regra de fiação
 (`isAllowedLink` em `board.ts`) proíbe sensor → ação. A energia é `energyCost` (`network.ts`).
 `core.test.ts` garante que: a referência vence com 2★ na maioria das sementes e nunca liga sensor
 em ação; redes zeradas não vencem; com menos neurônios que `minHidden` não vence; nas missões com
@@ -96,8 +99,8 @@ lógicos; texto ≥ 16 px lógicos.
 ### Criar um upgrade, uma carta, uma conquista ou um avatar
 - Upgrade: `core/progression/upgrades.ts` (`UPGRADES` + `capsFor`) e textos `upg.<id>.*`.
 - Carta: `core/progression/cards.ts` (`CARDS`, efeitos em `RunMods`) e textos `card.<id>.*`.
-  As cartas entram no MEIO da rodada: efeito novo = campo em `RunMods` + tratamento em
-  `TrainScene.applyCard`.
+  Táticas (com `price`) aparecem na loja do meio da rodada; sorte/azar surgem sozinhas como carta
+  do destino. Efeito novo = campo em `RunMods` + tratamento em `TrainScene.applyCard`.
 - Ferramenta de Design: `core/progression/tools.ts` (missão que a libera), textos `tool.<id>.*` e
   `design.tool.<id>`, ícone em `ICONS` e o comportamento em `DesignScene.onDown` (modo) ou no botão (ação).
 - Conquista: `core/progression/achievements.ts` e textos `ach.<id>.*`; se precisar de um contador

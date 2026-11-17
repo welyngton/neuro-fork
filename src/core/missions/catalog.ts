@@ -18,7 +18,8 @@
  *  - sensores binários valem 0 ou 1; `x`, `y` e `tom` variam de -1 a 1;
  *  - `targets` com 1 coluna = classe binária; com N colunas = one-hot da ação correta.
  */
-import { Topology, createRng } from '../nn/network';
+import { Topology, createRng, energyCost } from '../nn/network';
+import { trainEnergyPerEpoch, waterPerEpoch } from '../progression/resources';
 import { ClassCase } from '../simulation/classification';
 import { FIELD_EXTRA, FieldShape, makeField } from './datasets';
 import { CaptchaVisual, DataPoint, FieldVisual, MissionDef, SorterVisual, TuringVisual } from './types';
@@ -165,8 +166,28 @@ for (const p of [0, 1]) {
   }
 }
 
+/**
+ * Acrescenta o custo do TREINO ao balanceamento de uma missão, a partir da
+ * solução de referência treinada pelas épocas dela:
+ *  - limiar oculto (3ª estrela) += 120% da energia de treino da referência;
+ *  - bateria visível          += 350% dela (folga para experimentar e errar);
+ *  - tanque de água           = 250% da água que a referência gasta.
+ */
+function withTraining(m: Omit<MissionDef, 'water'>): MissionDef {
+  const cost = energyCost(m.reference.topology, m.extraInputs);
+  const hyper = { ...m.defaults, ...m.reference.hyper };
+  const trainE = hyper.epochs * trainEnergyPerEpoch(cost);
+  const water = hyper.epochs * waterPerEpoch(cost, hyper.learningRate);
+  return {
+    ...m,
+    budget: m.budget + Math.ceil(trainE * 1.2),
+    energy: m.energy + Math.ceil(trainE * 3.5) + 2,
+    water: Math.ceil((water * 2.5) / 10) * 10,
+  };
+}
+
 /** Todas as missões, em ordem de progressão. */
-export const MISSIONS: MissionDef[] = [
+export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
   {
     id: 'bercario',
     pos: { x: 0.05, y: 0.8 },
@@ -415,7 +436,8 @@ export const MISSIONS: MissionDef[] = [
     minHidden: 3,
     cases: turingCases,
   },
-];
+]).map(withTraining);
+
 
 /** Id da última missão — vencê-la "zera" o jogo. */
 export const FINAL_MISSION_ID = MISSIONS[MISSIONS.length - 1].id;

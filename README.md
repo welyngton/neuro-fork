@@ -37,11 +37,16 @@ MENU (opções + mapa de missões)
 ## Regras de projeto
 
 - **Sensor não se liga direto em ação**: todo sinal passa por pelo menos um neurônio.
-- **Energia**: cada peça custa (cabo 1⚡, neurônio 2⚡, neurônio em camada funda 3⚡, sensor
-  derivado +1⚡) e cada missão tem um teto de bateria, visível no Design.
-- **Estrelas**: vitória, qualidade do aprendizado e eficiência energética. Os limiares ficam
-  em `core/missions/catalog.ts` (`targetLoss`, `budget`) e **não aparecem no jogo**; a tela de
-  resultado mostra só a energia usada, a perda final e uma provocação.
+- **Energia**: cada missão tem uma bateria que paga a REDE (cabo 1⚡, neurônio 2⚡, neurônio em
+  camada funda 3⚡, sensor derivado +1⚡) e o TREINO (cada época gasta energia; redes maiores
+  gastam mais; táticas compradas também custam). O que a rede não usa vira reserva de treino.
+- **Água de resfriamento**: cada época gasta água (taxa de aprendizado alta esquenta mais). Se a
+  água acaba, a rede **superaquece** e todo o treino é perdido — a água volta, a energia não.
+  Bateria e tanque só recarregam quando a rede muda no Design (poda e trava não recarregam).
+- **Treino obrigatório**: só dá para simular depois de treinar.
+- **Estrelas**: vitória, qualidade do aprendizado (perda de validação) e eficiência energética
+  TOTAL (rede + treino). Os limiares ficam em `core/missions/catalog.ts` e **não aparecem no
+  jogo**; a tela de resultado mostra só a energia usada, a perda final e uma provocação.
 - Os testes (`core.test.ts`) garantem por missão: a solução de referência cabe no limiar e vence;
   com menos neurônios que `minHidden` não vence; ligar todos os sensores estoura o limiar quando há
   sensor inútil.
@@ -54,9 +59,9 @@ MENU (opções + mapa de missões)
 - **Loja**: as estrelas compram upgrades — mais encaixes, segunda camada, auto-fiação, sensores
   derivados (x², y², x·y), bateria de grafeno (+30% de energia), rodadas de 800 épocas, parada
   antecipada, L2 e dropout.
-- **Cartas de treino**: na metade de cada rodada o treino para e sorteia 2 ou 3 cartas — táticas à
-  vista e uma do destino virada (sorte ou azar). O jogador escolhe uma ou segue sem carta.
-  Os nomes vêm do baralho dos slides do prof. Peng Yaohao.
+- **Cartas de treino**: na metade de cada rodada abre a **loja de táticas** — sempre 2 cartas com
+  preço em energia (compre uma ou siga). Às vezes surge sozinha uma **carta do destino** virada,
+  de sorte ou azar, para aceitar ou passar. Os nomes vêm do baralho dos slides do prof. Peng Yaohao.
 - **Dicas de conceito**, **lentes do treino** (perda, fronteira, espaço oculto em 3D), **avatar**
   (5 modelos, 6 cores, 5 níveis) e **26 conquistas** com níveis bronze/prata/ouro.
 

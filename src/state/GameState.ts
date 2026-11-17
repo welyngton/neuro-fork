@@ -44,6 +44,10 @@ export interface DesignSave {
   card?: string | null;
   /** Parada antecipada ligada (upgrade). */
   earlyStop?: boolean;
+  /** Energia já gasta em treino (e cartas) com o desenho atual. */
+  trainSpent?: number;
+  /** Água restante no tanque (ausente = cheio). */
+  water?: number;
   /** A última rodada terminou voltando aos melhores pesos da validação. */
   usedEarlyStop?: boolean;
 }
@@ -69,7 +73,7 @@ export interface SaveData {
    * sims, zero_sims, good_loss_lost, duck_wins, full_board_wins, sparse_wins,
    * feature_wins, bad_card_wins, earlystop_wins, transfer_wins, dropout_runs,
    * exploded_runs, stuck_runs, overfit_runs, epochs_total, cards_drawn,
-   * avatar_changes, locale_changes.
+   * avatar_changes, locale_changes, overheats.
    */
   stats: Record<string, number>;
   /** Nível já anunciado de cada conquista (para avisar só as novas). */

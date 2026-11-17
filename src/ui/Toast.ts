@@ -11,7 +11,8 @@
  * ```
  * No máximo 3 avisos ficam empilhados; tocar num aviso o dispensa.
  * Por padrão surgem à direita; uma cena pode pedir o lado esquerdo com
- * `scene.data.set('toastSide', 'left')` (o Treino faz isso para não cobrir o painel).
+ * `scene.data.set('toastSide', 'left')` e outra altura inicial com `scene.data.set('toastTop', y)`
+ * (o Treino usa os dois para não cobrir o painel nem os medidores de energia e água).
  */
 import Phaser from 'phaser';
 import { audio, state } from '../app/services';
@@ -31,7 +32,7 @@ const WIDTH = 400;
 const TOP = 84;
 
 function relayout(scene: Phaser.Scene): void {
-  let y = TOP;
+  let y = (scene.data.get('toastTop') as number | undefined) ?? TOP;
   for (const c of stacks.get(scene) ?? []) {
     scene.tweens.add({ targets: c, y, duration: 180, ease: 'Cubic.out' });
     y += (c.getData('h') as number) + 8;
@@ -52,7 +53,7 @@ export function showToast(scene: Phaser.Scene, o: ToastOptions): void {
   const left = scene.data.get('toastSide') === 'left';
   const x = left ? 14 : scene.scale.width - WIDTH - 14;
   const away = left ? -WIDTH - 20 : scene.scale.width + 20;
-  const box = scene.add.container(away, TOP, [bg, title, text]).setDepth(1500).setData('h', h);
+  const box = scene.add.container(away, (scene.data.get('toastTop') as number | undefined) ?? TOP, [bg, title, text]).setDepth(1500).setData('h', h);
   box.setSize(WIDTH, h);
   box.setInteractive(new Phaser.Geom.Rectangle(0, 0, WIDTH, h), Phaser.Geom.Rectangle.Contains);
 

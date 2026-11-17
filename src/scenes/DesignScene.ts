@@ -22,8 +22,13 @@
  *  - AUTO (loja), DESFAZER e BOMBA.
  *
  * ENERGIA: cada peça tem preço (`PRICE` em `core/nn/network.ts`) e a missão tem
- * um teto (bateria). A cena recusa qualquer edição que estoure o teto. O limiar
- * de eficiência que vale estrela NÃO aparece — é parte do desafio.
+ * uma bateria que paga a rede E o treino: o que a rede não gasta vira reserva
+ * para treinar. A cena recusa edições que estourem a bateria. O limiar de
+ * eficiência que vale estrela NÃO aparece — é parte do desafio.
+ *
+ * Mudar a rede (neurônio, cabo, ativação) zera o treino: pesos, energia de
+ * treino gasta e água voltam ao início. PODA e TRAVA são "cirurgias" pós-treino
+ * e preservam pesos e recursos.
  *
  * A cena edita o {@link Board} salvo em `GameState` e nunca treina: quem cuida
  * dos pesos é a TrainScene.
@@ -341,7 +346,7 @@ export class DesignScene extends BaseScene {
     this.refresh(true);
   }
 
-  private removeLink(index: number): void {
+  private removeLink(index: number, keepTraining = false): void {
     this.snapshot();
     const [a, b] = this.board.links[index];
     const pa = this.view.posOf(a);
@@ -350,7 +355,7 @@ export class DesignScene extends BaseScene {
     this.board.frozen = (this.board.frozen ?? []).filter((k) => k !== linkKey(a, b));
     audio.sfx('erase');
     burst(this, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2, C.orange, 8);
-    this.refresh(true);
+    this.refresh(true, keepTraining);
   }
 
   private connect(a: string, b: string): void {
@@ -420,8 +425,7 @@ export class DesignScene extends BaseScene {
     burst(this, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2, 0xffffff, 8, 160);
     this.setHint(on ? 'design.hint.frozen' : 'design.hint.unfrozen', 'idle');
     // Congelar não muda a arquitetura: os pesos treinados continuam valendo.
-    state.saveDesign(this.mission.id, { board: this.board });
-    this.redrawEnergy();
+    this.refresh(true, true);
   }
 
   /** PODA: corta o cabo (não congelado) de menor peso treinado. */
@@ -444,7 +448,7 @@ export class DesignScene extends BaseScene {
     const index = this.board.links.findIndex(([a, b]) => a === best![0] && b === best![1]);
     const pa = this.view.posOf(best[0]);
     const pb = this.view.posOf(best[1]);
-    this.removeLink(index);
+    this.removeLink(index, true);
     tip(this, 'prune', true);
     floatText(this, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2 - 20, `+${PRICE.cable}⚡`, css(C.green), 22);
     this.hint.setText(t('design.hint.pruned', { w: bestW.toFixed(2) }));
@@ -573,26 +577,40 @@ export class DesignScene extends BaseScene {
     this.tweens.add({ targets: this.energyText, scale: 1.25, duration: 90, yoyo: true, repeat: 1 });
   }
 
-  /** Desenha a bateria: energia gasta x teto da missão. */
+  /** Desenha a bateria: violeta = rede, magenta = treino já gasto, amarelo = sobra para treinar. */
   private redrawEnergy(): void {
     const cost = this.cost();
-    const ratio = cost / this.ceiling;
-    const color = ratio < 0.6 ? C.green : ratio < 0.85 ? C.yellow : C.orange;
-    this.energyText.setText(t('design.energy', { a: cost, b: this.ceiling })).setColor(css(color));
+    const spent = Math.ceil(state.design(this.mission.id).trainSpent ?? 0);
+    const free = Math.max(0, this.ceiling - cost - spent);
+    this.energyText.setText(t('design.energy', { a: cost, t: spent, b: this.ceiling })).setColor(css(free < this.ceiling * 0.25 ? C.orange : C.yellow));
     const w = 230;
     const x = this.W - 24 - w;
     const y = this.energyText.y + 14;
     const segs = 20;
     const g = this.energyBar.clear();
     for (let i = 0; i < segs; i++) {
-      const on = (i + 0.5) / segs <= ratio;
-      g.fillStyle(on ? color : C.dim, on ? 1 : 0.35).fillRect(x + (i * w) / segs + 1, y, w / segs - 3, 10);
+      const v = ((i + 0.5) / segs) * this.ceiling;
+      const color = v <= cost ? C.violet : v <= cost + spent ? C.magenta : C.yellow;
+      g.fillStyle(color, color === C.yellow ? 0.9 : 0.6).fillRect(x + (i * w) / segs + 1, y, w / segs - 3, 10);
     }
   }
 
-  /** Recalcula validação/dica e, se `changed`, salva o tabuleiro (zerando o contador de treino). */
-  private refresh(changed: boolean): void {
-    if (changed) state.saveDesign(this.mission.id, { board: this.board, epochs: 0 });
+  /**
+   * Recalcula validação/dica e, se `changed`, salva o tabuleiro.
+   * Uma mudança de rede zera o treino (pesos, energia de treino e água);
+   * `keepTraining` preserva tudo (poda e trava).
+   */
+  private refresh(changed: boolean, keepTraining = false): void {
+    if (changed && keepTraining) state.saveDesign(this.mission.id, { board: this.board });
+    else if (changed) {
+      const d = state.design(this.mission.id);
+      const hadTraining = d.epochs > 0 || (d.trainSpent ?? 0) > 0;
+      state.saveDesign(this.mission.id, { board: this.board, epochs: 0, params: null, loss: 1, trainSpent: 0, water: undefined, usedEarlyStop: false });
+      if (hadTraining) {
+        floatText(this, this.W - 140, this.energyText.y - 30, t('design.resetTrain'), css(C.magenta), 18);
+        tip(this, 'retrain', true);
+      }
+    }
     const topo = boardToTopology(this.bp, this.board);
     const check = validateTopology(topo);
     this.nextBtn.setEnabled(check.ok);

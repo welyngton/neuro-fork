@@ -118,7 +118,9 @@ export class SimulationScene extends BaseScene {
     const d = state.design(m.id);
     const win = this.result.success;
     const hidden = countHidden(this.topology);
-    const cost = energyCost(this.topology, m.extraInputs);
+    // Energia TOTAL: o hardware (rede) mais tudo que o treino e as cartas gastaram.
+    const netCost = energyCost(this.topology, m.extraInputs);
+    const cost = netCost + Math.ceil(d.trainSpent ?? 0);
     const stars: Stars = calculateStars({ success: win, loss: d.loss, targetLoss: m.targetLoss, cost, budget: m.budget });
     const isFinal = m.id === FINAL_MISSION_ID;
     state.recordResult(m.id, stars, isFinal);
@@ -128,7 +130,7 @@ export class SimulationScene extends BaseScene {
     audio.sfx(win ? 'win' : 'lose');
     if (win) burst(this, this.W / 2, this.H / 2, C.green, 60, 700);
     else this.cameras.main.shake(300, 0.01);
-    this.showResult(win, stars, isFinal, cost);
+    this.showResult(win, stars, isFinal, netCost);
     celebrate(this);
   }
 
@@ -153,7 +155,7 @@ export class SimulationScene extends BaseScene {
     if (d.usedEarlyStop) state.bump('earlystop_wins');
   }
 
-  private showResult(win: boolean, stars: Stars, isFinal: boolean, cost: number): void {
+  private showResult(win: boolean, stars: Stars, isFinal: boolean, netCost: number): void {
     const m = this.mission;
     const d = state.design(m.id);
     const layer = this.add.container(0, 0).setDepth(2000);
@@ -182,7 +184,7 @@ export class SimulationScene extends BaseScene {
 
     // Os critérios das estrelas NÃO são revelados: só os números da sua rede
     // e uma provocação diferente conforme o resultado.
-    const facts = `⚡ ${t('sim.energyUsed', { n: cost })}   ·   ${t('sim.lossFinal', { v: d.loss.toFixed(3) })}`;
+    const facts = `⚡ ${t('sim.energyUsed', { d: netCost, t: Math.ceil(d.trainSpent ?? 0) })}   ·   ${t('sim.lossFinal', { v: d.loss.toFixed(3) })}`;
     layer.add(body(this, this.W / 2, py + 214, facts, 22, C.text).setOrigin(0.5));
     const tease = stars === 3 ? 'sim.teaseTop' : stars > 0 ? `sim.teaseMid${Phaser.Math.Between(1, 4)}` : 'sim.teaseZero';
     layer.add(body(this, this.W / 2, py + 262, t(tease), 20, C.violet).setOrigin(0.5).setWordWrapWidth(pw - 80).setAlign('center'));

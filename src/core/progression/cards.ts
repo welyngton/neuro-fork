@@ -1,10 +1,13 @@
 /**
  * @module core/progression/cards
  *
- * Cartas de treino. No MEIO de cada rodada o treino para e o jogo sorteia 2
- * ou 3 cartas: táticas viradas para cima (uma decisão, cada uma com seu preço)
- * e uma carta do destino virada para baixo (sorte ou azar). O jogador escolhe
- * UMA — ou segue sem carta — e o efeito vale para o resto da rodada.
+ * Cartas de treino, em dois momentos:
+ *  - LOJA DE TÁTICAS: no meio de cada rodada o treino para e oferece 2 cartas
+ *    de tática à vista, cada uma com preço em energia. O jogador compra UMA
+ *    ou segue sem comprar;
+ *  - DESTINO: às vezes, num momento aleatório da rodada, surge sozinha uma
+ *    carta virada (sorte ou azar). O jogador aceita (e descobre) ou passa.
+ * O efeito vale para o resto da rodada.
  *
  * Cada carta é um conceito de ML/deep learning em forma de regra — os nomes
  * vêm do baralho proposto nos slides do prof. Peng (tunagem, dropout/GatoNet,
@@ -41,6 +44,10 @@ export interface RunMods {
   earlyStop: boolean;
   /** Troca os pesos atuais pelos melhores já salvos nesta missão. */
   transfer: boolean;
+  /** Soma (ou tira) água do tanque, em fração do tanque cheio. */
+  waterFrac: number;
+  /** Devolve energia à reserva de treino. */
+  energyRefund: number;
 }
 
 export const NO_MODS: RunMods = {
@@ -56,33 +63,41 @@ export const NO_MODS: RunMods = {
   rewind: false,
   earlyStop: false,
   transfer: false,
+  waterFrac: 0,
+  energyRefund: 0,
 };
 
 export interface CardDef {
   id: string;
   kind: CardKind;
   mods: Partial<RunMods>;
+  /** Preço em energia (só táticas). */
+  price?: number;
 }
 
 export const CARDS: CardDef[] = [
-  // Táticas: trocas conscientes.
-  { id: 'tunagem', kind: 'tatica', mods: { lrMul: 0.5, epochsMul: 1.5 } },
-  { id: 'forca_bruta', kind: 'tatica', mods: { epochsMul: 2 } },
-  { id: 'gatonet', kind: 'tatica', mods: { dropoutAdd: 0.2 } },
-  { id: 'regularizacao', kind: 'tatica', mods: { l2Add: 0.002 } },
-  { id: 'early_stop', kind: 'tatica', mods: { earlyStop: true } },
-  { id: 'transfer', kind: 'tatica', mods: { transfer: true } },
-  { id: 'augmentation', kind: 'tatica', mods: { augment: true } },
+  // Táticas (compradas com energia): trocas conscientes.
+  { id: 'tunagem', kind: 'tatica', price: 2, mods: { lrMul: 0.5, epochsMul: 1.5 } },
+  { id: 'forca_bruta', kind: 'tatica', price: 3, mods: { epochsMul: 2 } },
+  { id: 'gatonet', kind: 'tatica', price: 2, mods: { dropoutAdd: 0.2 } },
+  { id: 'regularizacao', kind: 'tatica', price: 2, mods: { l2Add: 0.002 } },
+  { id: 'early_stop', kind: 'tatica', price: 3, mods: { earlyStop: true } },
+  { id: 'transfer', kind: 'tatica', price: 4, mods: { transfer: true } },
+  { id: 'augmentation', kind: 'tatica', price: 2, mods: { augment: true } },
+  { id: 'gelo', kind: 'tatica', price: 3, mods: { waterFrac: 0.4 } },
   // Sorte.
   { id: 'rewind', kind: 'sorte', mods: { rewind: true } },
   { id: 'turbo', kind: 'sorte', mods: { lrMul: 1.5, epochsMul: 1.25 } },
   { id: 'foco', kind: 'sorte', mods: { earlyStop: true, epochsMul: 1.5 } },
+  { id: 'chuva', kind: 'sorte', mods: { waterFrac: 0.5 } },
+  { id: 'subsidio', kind: 'sorte', mods: { energyRefund: 4 } },
   // Azar.
   { id: 'vanishing', kind: 'azar', mods: { lrMul: 0.15 } },
   { id: 'ruido', kind: 'azar', mods: { noise: 0.15 } },
   { id: 'neuronio_morto', kind: 'azar', mods: { killNeuron: true } },
   { id: 'stack_overflow', kind: 'azar', mods: { weightScale: 4 } },
   { id: 'overfit', kind: 'azar', mods: { dataKeep: 0.4 } },
+  { id: 'vazamento', kind: 'azar', mods: { waterFrac: -0.3 } },
 ];
 
 export function getCard(id: string): CardDef | undefined {
@@ -94,22 +109,17 @@ export function modsOf(card: CardDef | undefined): RunMods {
   return { ...NO_MODS, ...card?.mods };
 }
 
-/**
- * Sorteia a mesa do meio do treino: 2 ou 3 cartas, sendo a última sempre a do
- * destino (60% sorte, 40% azar, virada para baixo) e as demais táticas diferentes.
- * @param rng fonte de aleatoriedade (injetável para testes).
- */
-export function dealCards(rng: () => number = Math.random): { tactics: CardDef[]; fate: CardDef } {
-  const pick = <T>(list: T[]) => list[Math.floor(rng() * list.length)];
+/** Loja do meio do treino: sempre 2 táticas diferentes. */
+export function dealTactics(rng: () => number = Math.random): [CardDef, CardDef] {
   const pool = CARDS.filter((c) => c.kind === 'tatica');
-  const tactics: CardDef[] = [];
-  const n = rng() < 0.5 ? 1 : 2;
-  while (tactics.length < n) {
-    const c = pick(pool.filter((x) => !tactics.includes(x)));
-    tactics.push(c);
-  }
-  // Sorteia o tipo UMA vez (antes, o sorteio dentro do filtro podia deixar a lista vazia).
+  const a = pool[Math.floor(rng() * pool.length)];
+  const rest = pool.filter((c) => c !== a);
+  return [a, rest[Math.floor(rng() * rest.length)]];
+}
+
+/** Carta do destino: 60% sorte, 40% azar. */
+export function dealFate(rng: () => number = Math.random): CardDef {
   const kind = rng() < 0.6 ? 'sorte' : 'azar';
-  const fate = pick(CARDS.filter((c) => c.kind === kind));
-  return { tactics, fate };
+  const pool = CARDS.filter((c) => c.kind === kind);
+  return pool[Math.floor(rng() * pool.length)];
 }

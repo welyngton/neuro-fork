@@ -4,6 +4,7 @@ import { runMission } from './missions/runMission';
 import { MissionDef, toSamples } from './missions/types';
 import { Trainer } from './nn/Trainer';
 import { Topology, forward, initParams, energyCost, reconcileParams, validateTopology } from './nn/network';
+import { trainEnergyPerEpoch, waterPerEpoch } from './progression/resources';
 import { calculateStars } from './scoring';
 
 /** Treina `t` na missão e diz se venceu (e com que perda). */
@@ -82,6 +83,11 @@ describe('missões', () => {
       const ref = m.reference;
       expect(energyCost(ref.topology, m.extraInputs)).toBeLessThanOrEqual(m.budget);
       expect(m.energy).toBeGreaterThan(m.budget);
+      // Treinar a referência cabe no limiar (rede + treino) e usa no máximo ~half do tanque.
+      const hy = { ...m.defaults, ...ref.hyper };
+      const cost = energyCost(ref.topology, m.extraInputs);
+      expect(cost + hy.epochs * trainEnergyPerEpoch(cost)).toBeLessThanOrEqual(m.budget);
+      expect(hy.epochs * waterPerEpoch(cost, hy.learningRate)).toBeLessThanOrEqual(m.water * 0.5);
       // Nenhum cabo da referência liga sensor direto em ação.
       for (const [a, b] of ref.topology.links) expect(m.inputs.concat(m.extraInputs ?? []).includes(a) && m.outputs.includes(b)).toBe(false);
       let good = 0;
@@ -108,7 +114,9 @@ describe('missões', () => {
     }
     if (['bercario', 'triagem', 'corredor', 'captcha'].includes(m.id)) {
       it(`${m.id}: ligar TODOS os sensores estoura o limiar de eficiência`, () => {
-        expect(energyCost(fullyConnected(m.inputs, [min], m.outputs))).toBeGreaterThan(m.budget);
+        const cost = energyCost(fullyConnected(m.inputs, [min], m.outputs));
+        const epochs = (m.reference.hyper?.epochs ?? m.defaults.epochs);
+        expect(cost + epochs * trainEnergyPerEpoch(cost)).toBeGreaterThan(m.budget);
       });
     }
   }

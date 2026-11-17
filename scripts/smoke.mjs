@@ -61,6 +61,7 @@ await goto(page, 'Design', { missionId: 'bercario' });
   console.log('edição manual ok (cabo direto recusado)');
 }
 
+const shots = {};
 const ids = await page.evaluate(() => window.__neuro.MISSIONS.map((m) => m.id));
 for (const id of ids) {
   // Monta a solução de referência direto no save (compra os upgrades que ela pede).
@@ -72,7 +73,7 @@ for (const id of ids) {
     const t = m.reference.topology;
     d.board.hidden = d.board.hidden.map((col, c) => col.map((_, r) => !!t.hidden[c]?.[r]));
     d.board.links = t.links.map((l) => [...l]);
-    state.saveDesign(id, { board: d.board, params: null, seed: 1, hyper: { ...m.defaults, ...m.reference.hyper }, earlyStop: !!m.reference.earlyStop });
+    state.saveDesign(id, { board: d.board, params: null, seed: 1, epochs: 0, trainSpent: 0, water: undefined, hyper: { ...m.defaults, ...m.reference.hyper }, earlyStop: !!m.reference.earlyStop });
     return missing;
   }, id);
   if (need.length) throw new Error(`${id}: sem estrelas para ${need}`);
@@ -82,22 +83,25 @@ for (const id of ids) {
     if (attempt === 1) await shot(page, `03-design-${id}`);
     await goto(page, 'Train', { missionId: id });
     await page.mouse.click(640, 668); // TREINAR
-    // A rodada para na metade para o sorteio de cartas: na 1ª missão fotografa e
-    // escolhe a 1ª carta; nas outras segue sem carta (o teste quer a referência pura).
+    // A rodada para na metade (loja de táticas) e às vezes surge a carta do destino.
+    // Na 1ª missão compra a 1ª tática; nas outras segue sem carta (referência pura).
     for (;;) {
       await page.waitForFunction(() => { const g = window.__game; const s = g.scene.getScene('Train'); return g.registry.get('drawOpen') || (!s.running && s.trainer.epoch > 0); }, null, { timeout: 180000 });
-      const open = await page.evaluate(() => window.__game.registry.get('drawOpen'));
-      if (!open) break;
+      const kind = await page.evaluate(() => window.__game.registry.get('drawOpen') && window.__game.registry.get('drawKind'));
+      if (!kind) break;
       await page.waitForTimeout(900);
-      if (id === 'bercario' && attempt === 1) await shot(page, '04a-sorteio-cartas');
-      await page.evaluate((pick) => window.__game.scene.getScene('Train').resolveDraw(pick), id === 'bercario' ? 0 : -1);
-      await page.waitForTimeout(id === 'bercario' ? 2600 : 200);
+      const pick = id === 'bercario' ? 0 : -1;
+      if (kind === 'cards.shopTitle' && !shots.shop) { shots.shop = true; await shot(page, '04a-loja-taticas'); }
+      if (kind === 'cards.fateTitle' && !shots.fate) { shots.fate = true; await shot(page, '04b-carta-destino'); }
+      await page.evaluate((p) => window.__game.scene.getScene('Train').resolveDraw(p), pick);
+      await page.waitForTimeout(pick === 0 ? 2800 : 400);
+      // Pode abrir outra carta logo em seguida (destino perto da loja): o laço trata.
     }
     await page.waitForTimeout(400);
     if (attempt === 1) await shot(page, `04-train-${id}`);
     if (id === 'quadrantes' && attempt === 1) {
       await page.evaluate(() => window.__game.scene.getScene('Train').setLens('boundary'));
-      await page.waitForTimeout(500); await shot(page, '04b-lente-fronteira');
+      await page.waitForTimeout(500); await shot(page, '04f-lente-fronteira');
       await page.evaluate(() => window.__game.scene.getScene('Train').setLens('space'));
       await page.waitForTimeout(500); await shot(page, '04c-lente-espaco');
     }
@@ -114,12 +118,20 @@ for (const id of ids) {
     await page.waitForFunction(() => window.__game.scene.getScene('Simulation').children.list.some((o) => o.depth === 2000), null, { timeout: 240000 });
     await page.waitForTimeout(1600);
     stars = await page.evaluate((id) => window.__neuro.state.stars(id), id);
-    if (stars < 2) await page.evaluate((id) => { const s = window.__neuro.state; s.saveDesign(id, { seed: s.design(id).seed + 1, params: null }); }, id);
+    if (stars < 2) await page.evaluate((id) => { const s = window.__neuro.state; s.saveDesign(id, { seed: s.design(id).seed + 1, params: null, epochs: 0, trainSpent: 0, water: undefined }); }, id);
     else await shot(page, `06-result-${id}`);
   }
   console.log(id.padEnd(11), 'estrelas:', stars);
   if (!stars) throw new Error(`${id}: não venceu em 8 tentativas`);
 }
+
+// Superaquecimento: tanque quase vazio e treina.
+await page.evaluate(() => window.__neuro.state.saveDesign('bercario', { water: 0.3, trainSpent: 0, epochs: 0 }));
+await goto(page, 'Train', { missionId: 'bercario' });
+await page.mouse.click(640, 668);
+await page.waitForTimeout(1300); await shot(page, '04g-superaqueceu');
+const melted = await page.evaluate(() => window.__neuro.state.stats ?? window.__neuro.state.snapshot().stats.overheats);
+console.log('superaquecimentos:', JSON.stringify(melted));
 
 await goto(page, 'Menu'); await page.waitForTimeout(600); await shot(page, '07-menu-final');
 await goto(page, 'Shop'); await shot(page, '08-loja');

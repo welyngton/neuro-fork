@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { autoWire, blueprintFor, boardFromTopology, boardToTopology, emptyBoard } from '../core/missions/board';
 import { ACHIEVEMENTS } from '../core/progression/achievements';
-import { dealCards, modsOf } from '../core/progression/cards';
+import { dealFate, dealTactics, modsOf } from '../core/progression/cards';
 import { capsFor } from '../core/progression/upgrades';
 import { getMission } from '../core/missions/catalog';
 import { GameState } from './GameState';
@@ -87,16 +87,15 @@ describe('board', () => {
 });
 
 describe('cartas', () => {
-  it('a mesa traz 2 ou 3 cartas: táticas diferentes e uma do destino', () => {
-    const sizes = new Set<number>();
+  it('a loja traz sempre 2 táticas diferentes, com preço; o destino é sorte ou azar', () => {
     for (let i = 0; i < 2000; i++) {
-      const d = dealCards();
-      sizes.add(d.tactics.length + 1);
-      expect(d.tactics.every((c) => c.kind === 'tatica')).toBe(true);
-      expect(new Set(d.tactics).size).toBe(d.tactics.length);
-      expect(['sorte', 'azar']).toContain(d.fate.kind);
+      const [a, b] = dealTactics();
+      expect(a.kind).toBe('tatica');
+      expect(b.kind).toBe('tatica');
+      expect(a).not.toBe(b);
+      expect(a.price).toBeGreaterThan(0);
+      expect(['sorte', 'azar']).toContain(dealFate().kind);
     }
-    expect([...sizes].sort()).toEqual([2, 3]);
     expect(modsOf(undefined).lrMul).toBe(1);
   });
 
