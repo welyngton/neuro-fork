@@ -8,7 +8,7 @@
  * perda, leitura de época/perda/acertos e os hiperparâmetros.
  *
  * O treino roda no próprio laço do jogo, algumas épocas por frame
- * ({@link Trainer.step}), para durar ~4 s e ser gostoso de assistir.
+ * ({@link Trainer.step}), dosadas pelo tempo para durar ~4 s em qualquer aparelho.
  * Daqui o jogador pode VOLTAR AO DESIGN ou seguir para SIMULAR.
  */
 import Phaser from 'phaser';
@@ -29,8 +29,8 @@ import { BaseScene, MissionSceneData } from './BaseScene';
 
 const LR_VALUES = [0.01, 0.03, 0.1, 0.3, 0.5, 1, 2];
 const EPOCH_VALUES = [50, 100, 200, 400, 800];
-/** Duração-alvo de uma rodada de treino, em frames (~4 s a 60 fps). */
-const RUN_FRAMES = 240;
+/** Duração-alvo de uma rodada de treino, em ms — independe do FPS do aparelho. */
+const RUN_MS = 4000;
 
 export class TrainScene extends BaseScene {
   protected accent = C.magenta;
@@ -44,6 +44,8 @@ export class TrainScene extends BaseScene {
   private running = false;
   private runEpochs = 0;
   private frame = 0;
+  /** Épocas "devidas" acumuladas (fração) conforme o tempo passa. */
+  private owed = 0;
   private readout!: { epoch: Phaser.GameObjects.Text; loss: Phaser.GameObjects.Text; acc: Phaser.GameObjects.Text };
   private msg!: Phaser.GameObjects.Text;
   private trainBtn!: NeonButton;
@@ -196,9 +198,12 @@ export class TrainScene extends BaseScene {
     this.go(key, { missionId: this.mission.id });
   }
 
-  update(time: number): void {
+  update(time: number, delta: number): void {
     if (this.running) {
-      this.trainer.step(Math.max(1, Math.ceil(this.runEpochs / RUN_FRAMES)));
+      this.owed += (this.runEpochs * Math.min(delta, 100)) / RUN_MS;
+      const n = Math.floor(this.owed);
+      this.owed -= n;
+      this.trainer.step(n);
       this.view.params = this.trainer.params;
       this.frame++;
       if (this.frame % 5 === 0) {

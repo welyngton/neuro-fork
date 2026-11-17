@@ -52,7 +52,7 @@ export function glow(scene: Phaser.Scene, x: number, y: number, color: number, s
 /** Texto que sobe e some (ex.: "+1"). */
 export function floatText(scene: Phaser.Scene, x: number, y: number, str: string, color: string, size = 30): void {
   const t = scene.add
-    .text(x, y, str, { fontFamily: 'Orbitron, sans-serif', fontSize: `${size}px`, fontStyle: '700', color })
+    .text(x, y, str, { fontFamily: 'Oxanium, sans-serif', fontSize: `${size}px`, fontStyle: '700', color })
     .setOrigin(0.5)
     .setDepth(950);
   scene.tweens.add({ targets: t, y: y - 60, alpha: 0, duration: 800, ease: 'Cubic.out', onComplete: () => t.destroy() });

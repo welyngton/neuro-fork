@@ -14,11 +14,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "smoke": "node scripts/smoke.mjs",
     "deploy:hosting": "npm run build && npx --yes firebase-tools deploy --only hosting",
     "deploy:all": "npm run build && npx --yes firebase-tools deploy --only hosting,firestore:rules"
   },
   "dependencies": {
-    "@fontsource/orbitron": "^5.3.0",
+    "@fontsource/oxanium": "^5.3.0",
     "@fontsource/rajdhani": "^5.3.0",
     "firebase": "^13.4.0",
     "phaser": "^3.90.0"

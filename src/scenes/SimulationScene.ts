@@ -71,7 +71,7 @@ export class SimulationScene extends BaseScene {
       this.setSpeed((this.speedIndex + 1) % SPEEDS.length);
       speedBtn.setLabel(t('sim.speed', { v: SPEEDS[this.speedIndex] }));
     }, { color: C.cyan, size: 16 });
-    new NeonButton(this, this.W - 80, by, 120, 64, `${t('sim.skip')} ▶▶`, () => this.setSpeed(-1), { color: C.dim, size: 15 });
+    new NeonButton(this, this.W - 80, by, 120, 64, `${t('sim.skip')} ▶▶`, () => this.setSpeed(-1), { color: C.text, size: 15 });
     const hudText = body(this, 384, by, '', 20, C.text).setOrigin(0, 0.5).setWordWrapWidth(this.W - 384 - 370);
 
     const skin = SKINS[m.skin]({ scene: this, rect, mission: m, result: this.result, hud: (s) => hudText.setText(s) });
@@ -147,7 +147,7 @@ export class SimulationScene extends BaseScene {
     const criteria: [boolean, string][] = [
       [stars >= 1, t('sim.star1')],
       [stars >= 2, `${t('sim.star2', { v: m.targetLoss })}  (${d.loss.toFixed(3)})`],
-      [stars >= 3, t('sim.star3', { n: m.idealHidden })],
+      [stars >= 3, m.idealHidden ? t('sim.star3', { n: m.idealHidden }) : t('sim.star3zero')],
     ];
     criteria.forEach(([ok, label], i) => {
       layer.add(body(this, px + 70, py + 204 + i * 36, `${ok ? '★' : '☆'}  ${label}`, 22, ok ? C.yellow : C.dim));

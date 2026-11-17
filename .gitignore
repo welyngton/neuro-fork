@@ -42,3 +42,6 @@ coverage
 /blob-report/
 /playwright/.cache/
 
+
+# Capturas do teste de fumaça
+/screenshots/

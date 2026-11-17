@@ -2,8 +2,8 @@
  * @module main
  * Ponto de entrada: carrega fontes, sobe os serviços e cria o jogo Phaser.
  */
-import '@fontsource/orbitron/700.css';
-import '@fontsource/orbitron/900.css';
+import '@fontsource/oxanium/700.css';
+import '@fontsource/oxanium/800.css';
 import '@fontsource/rajdhani/700.css';
 import './styles.css';
 import Phaser from 'phaser';
@@ -20,7 +20,7 @@ import { C, GAME_HEIGHT } from './ui/theme';
 async function start(): Promise<void> {
   // O canvas só enxerga fontes já carregadas; sem isso o primeiro texto sai na fonte padrão.
   await Promise.all(
-    ['700 20px Orbitron', '900 20px Orbitron', '700 20px Rajdhani'].map((f) => document.fonts.load(f).catch(() => undefined)),
+    ['700 20px Oxanium', '800 20px Oxanium', '700 20px Rajdhani'].map((f) => document.fonts.load(f).catch(() => undefined)),
   );
   bootServices();
 

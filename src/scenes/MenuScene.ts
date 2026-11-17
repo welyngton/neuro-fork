@@ -68,7 +68,7 @@ export class MenuScene extends BaseScene {
     addPanel(this, { x: 14, y: 14, w: SIDE_W - 14, h: this.H - 28 }, C.panelEdge, 0.8);
     const cx = 14 + (SIDE_W - 14) / 2;
     glow(this, cx, 60, C.magenta, 2.6, 0.25);
-    this.add.text(cx, 50, 'NEUROBOT', { fontFamily: FONT_TITLE, fontSize: '40px', fontStyle: '900', color: css(C.cyan) }).setOrigin(0.5).setShadow(3, 3, css(C.magenta), 0);
+    this.add.text(cx, 50, 'NEUROBOT', { fontFamily: FONT_TITLE, fontSize: '40px', fontStyle: '800', color: css(C.cyan) }).setOrigin(0.5).setShadow(3, 3, css(C.magenta), 0);
     body(this, cx, 86, t('menu.subtitle'), 17, C.magenta).setOrigin(0.5);
     const mascot = new Robot(this, cx, 176, 0.95);
     this.time.addEvent({ delay: 4000, loop: true, callback: () => mascot.hop() });

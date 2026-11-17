@@ -24,7 +24,7 @@ export class EndingScene extends BaseScene {
     const cx = this.W / 2;
     glow(this, cx, 250, C.green, 7, 0.25);
     const head = this.add
-      .text(cx, 90, t('ending.title'), { fontFamily: FONT_TITLE, fontSize: '56px', fontStyle: '900', color: css(C.green) })
+      .text(cx, 90, t('ending.title'), { fontFamily: FONT_TITLE, fontSize: '56px', fontStyle: '800', color: css(C.green) })
       .setOrigin(0.5)
       .setShadow(4, 4, css(C.magenta), 0);
     // Tremida de "glitch" periódica no título.

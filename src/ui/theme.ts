@@ -32,7 +32,7 @@ export const C = {
 /** Converte cor numérica em string CSS (`#rrggbb`). */
 export const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
-export const FONT_TITLE = 'Orbitron, sans-serif';
+export const FONT_TITLE = 'Oxanium, sans-serif';
 export const FONT_BODY = 'Rajdhani, sans-serif';
 
 /** Texto de corpo (Rajdhani 700). */
@@ -40,7 +40,7 @@ export function body(scene: Phaser.Scene, x: number, y: number, str: string, siz
   return scene.add.text(x, y, str, { fontFamily: FONT_BODY, fontSize: `${size}px`, fontStyle: '700', color: css(color) });
 }
 
-/** Texto de título (Orbitron 700) — caixa alta, anguloso. */
+/** Texto de título (Oxanium 700) — caixa alta, anguloso. */
 export function title(scene: Phaser.Scene, x: number, y: number, str: string, size = 28, color: number = C.text) {
   return scene.add.text(x, y, str, { fontFamily: FONT_TITLE, fontSize: `${size}px`, fontStyle: '700', color: css(color) });
 }

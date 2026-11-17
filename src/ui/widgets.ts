@@ -184,7 +184,7 @@ export class StarRow extends Phaser.GameObjects.Container {
 export function addChip(scene: Phaser.Scene, x: number, y: number, text: string, color: number, active: boolean): Phaser.GameObjects.Text {
   return scene.add
     .text(x, y, text, {
-      fontFamily: 'Orbitron, sans-serif',
+      fontFamily: 'Oxanium, sans-serif',
       fontSize: '18px',
       fontStyle: '700',
       color: css(active ? C.bg : color),
