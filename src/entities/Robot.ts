@@ -86,10 +86,15 @@ export class Robot extends Phaser.GameObjects.Container {
 
     scene.tweens.add({ targets: this.rig, y: -8, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     // Piscar.
-    scene.time.addEvent({
+    const blink = scene.time.addEvent({
       delay: 2600,
       loop: true,
       callback: () => scene.tweens.add({ targets: this.eyes, scaleY: 0.1, duration: 70, yoyo: true }),
+    });
+    // Robôs também vivem em sobreposições (lições do tour): ao sumir, levam o piscar e os balanços junto.
+    this.once(Phaser.GameObjects.Events.DESTROY, () => {
+      blink.remove();
+      scene.tweens.killTweensOf([this.rig, this.eyes]);
     });
     scene.add.existing(this);
   }

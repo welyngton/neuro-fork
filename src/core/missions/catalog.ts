@@ -2,7 +2,14 @@
  * @module core/missions/catalog
  *
  * Catálogo das 12 missões, na ordem de dificuldade — do "brinquedo de bebê"
- * (encaixar formas) até zerar o jogo no Teste de Turing.
+ * (encaixar formas, que também é a missão-tutorial) até zerar o jogo no Teste
+ * de Turing. Cada missão traz um tipo de desafio diferente: separar formas,
+ * fronteira no campo, labirintos, contar peças, montar um tangram, dobrar
+ * origami, encaixar quebra-cabeça, CAPTCHA e conversa.
+ *
+ * As camadas ocultas crescem ao longo do mapa (`layers`): 1 no começo, 2 no
+ * meio e 3 no fim, e as soluções de referência das últimas missões são redes
+ * profundas com mais fios.
  *
  * Regra geral do jogo: sensores NÃO se ligam direto nas ações — todo sinal
  * passa por pelo menos um neurônio (ver `isAllowedLink` em `board.ts`).
@@ -22,7 +29,7 @@ import { Topology, createRng, energyCost } from '../nn/network';
 import { trainEnergyPerEpoch, waterPerEpoch } from '../progression/resources';
 import { ClassCase } from '../simulation/classification';
 import { FIELD_EXTRA, FieldShape, makeField } from './datasets';
-import { CaptchaVisual, DataPoint, FieldVisual, MissionDef, SorterVisual, TuringVisual } from './types';
+import { CaptchaVisual, DataPoint, FieldVisual, MissionDef, OrigamiVisual, SorterVisual, TuringVisual } from './types';
 
 /** Monta uma rede totalmente conectada camada a camada. `hiddenSizes` = neurônios por camada oculta. */
 export function fullyConnected(inputs: string[], hiddenSizes: number[], outputs: string[]): Topology {
@@ -134,10 +141,81 @@ function fieldMission(shape: FieldShape, seed: number) {
 }
 const FIELD_IN = ['x', 'y'];
 const fronteira = fieldMission('fronteira', 11);
-const quadrantes = fieldMission('quadrantes', 22);
-const ilha = fieldMission('ilha', 33);
-const luas = fieldMission('luas', 44);
-const alvo = fieldMission('alvo', 55);
+
+/* ------------------------------------------------------------------ 6. Contagem */
+const SLOTS = ['slot_1', 'slot_2', 'slot_3', 'slot_4'];
+/** Leituras de uma bandeja: cada encaixe vale 1 se tem peça; `soma` (derivado) = peças ÷ 4. */
+const trayInputs = (bits: number[]) => ({ ...Object.fromEntries(SLOTS.map((id, i) => [id, bits[i]])), soma: bits.reduce((a, b) => a + b, 0) / 4 });
+/** A caixa só fecha com EXATAMENTE duas peças: nem uma reta, nem "quanto mais melhor". */
+const countRule = (bits: number[]) => (bits.reduce((a, b) => a + b, 0) === 2 ? 1 : 0);
+const contagemTrain: DataPoint[] = [];
+for (let mask = 0; mask < 16; mask++) {
+  const bits = SLOTS.map((_, i) => (mask >> i) & 1);
+  contagemTrain.push(point(trayInputs(bits), [countRule(bits)]));
+}
+const TRAY_SHAPES = ['circle', 'triangle', 'square'] as const;
+const contagemCases: ClassCase[] = [
+  [1, 1, 0, 0], [1, 1, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [1, 0, 0, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 1, 1, 0], [1, 0, 1, 1], [0, 0, 1, 1],
+].map((bits, n) => ({
+  inputs: trayInputs(bits),
+  expected: countRule(bits),
+  visual: { shape: 'tray', cells: bits.map((b, i) => (b ? TRAY_SHAPES[(n + i) % 3] : null)) } satisfies SorterVisual,
+}));
+
+/* ------------------------------------------------------------------ 8. Tangram */
+const TANGRAM_IN = ['cantos', 'grande', 'inclinado', 'cor'];
+const TANGRAM_OUT = ['vela', 'bandeira', 'casco', 'proa'];
+/** Barco de tangram: triângulo grande = vela, pequeno = bandeira; quadrado = casco; paralelogramo (inclinado) = proa. */
+const tangramRule = (tri: boolean, big: number, tilted: number) => (tri ? (big ? 0 : 1) : tilted ? 3 : 2);
+const tangramTrain: DataPoint[] = [];
+for (const tri of [true, false]) for (const g of [0, 1]) for (const inc of [0, 1]) for (const cor of [0, 1]) {
+  tangramTrain.push(point({ cantos: tri ? 1 : 4 / 3, grande: g, inclinado: inc, cor }, oneHot(tangramRule(tri, g, inc), 4)));
+}
+const tangramPieces: [boolean, number, number, number][] = [
+  [true, 1, 0, 0], [false, 0, 0, 1], [true, 0, 1, 1], [false, 1, 1, 0], [false, 1, 0, 0], [true, 1, 1, 1], [false, 0, 1, 1], [true, 0, 0, 0], [false, 1, 1, 1], [true, 1, 0, 1],
+];
+const tangramCases: ClassCase[] = tangramPieces.map(([tri, big, inc, cor]) => ({
+  inputs: { cantos: tri ? 1 : 4 / 3, grande: big, inclinado: inc, cor },
+  expected: tangramRule(tri, big, inc),
+  visual: { shape: tri ? 'triangle' : inc ? 'parallelogram' : 'square', big: !!big, alt: !!cor } satisfies SorterVisual,
+}));
+
+/* ------------------------------------------------------------------ 10. Origami */
+/** Vincos alternados ao longo da folha: vale | montanha | vale | montanha (dobras em -0,5 · 0 · 0,5). */
+const foldRule = (x: number) => Math.floor((x + 1) * 2) % 2;
+function origamiSet(n: number, noise: number, seed: number): DataPoint[] {
+  const rng = createRng(seed);
+  const out: DataPoint[] = [];
+  while (out.length < n) {
+    const x = rng() * 2 - 1;
+    // Pontos colados numa dobra são ambíguos demais: ficam de fora.
+    if (Math.min(...[-0.5, 0, 0.5].map((b) => Math.abs(x - b))) < 0.06) continue;
+    let cls = foldRule(x);
+    if (rng() < noise) cls = 1 - cls;
+    out.push(point({ posicao: x, espessura: rng() * 2 - 1 }, [cls]));
+  }
+  return out;
+}
+const origamiTrain = origamiSet(48, 0.08, 5);
+const origamiVal = origamiSet(40, 0, 9);
+const origamiCases: ClassCase[] = origamiVal.map((p) => ({ inputs: p.in, expected: p.targets[0], visual: { x: p.in.posicao } satisfies OrigamiVisual }));
+
+/* ------------------------------------------------------------------ 11. Quebra-cabeça */
+const PUZZLE_IN = ['peca_cima', 'peca_baixo', 'vao_cima', 'vao_baixo', 'cor'];
+/** Encaixa quando cada borda da peça é o oposto da borda do vão (aba entra em recorte), em cima E embaixo. */
+const puzzleRule = (pc: number, pb: number, vc: number, vb: number) => (pc !== vc && pb !== vb ? 1 : 0);
+const puzzleTrain: DataPoint[] = [];
+for (let mask = 0; mask < 32; mask++) {
+  const [pc, pb, vc, vb, cor] = [0, 1, 2, 3, 4].map((i) => (mask >> i) & 1);
+  puzzleTrain.push(point({ peca_cima: pc, peca_baixo: pb, vao_cima: vc, vao_baixo: vb, cor }, [puzzleRule(pc, pb, vc, vb)]));
+}
+const puzzleCases: ClassCase[] = [
+  [1, 0, 0, 1, 0], [1, 1, 0, 0, 1], [0, 1, 0, 1, 1], [0, 0, 1, 1, 0], [1, 0, 1, 0, 1], [0, 1, 1, 0, 0], [1, 1, 0, 1, 0], [0, 0, 1, 0, 1], [1, 1, 1, 1, 1], [0, 1, 1, 0, 1],
+].map(([pc, pb, vc, vb, cor]) => ({
+  inputs: { peca_cima: pc, peca_baixo: pb, vao_cima: vc, vao_baixo: vb, cor },
+  expected: puzzleRule(pc, pb, vc, vb),
+  visual: { shape: 'puzzle', piece: [pc, pb], hole: [vc, vb], alt: !!cor } satisfies SorterVisual,
+}));
 
 /* ------------------------------------------------------------------ 12. Teste de Turing */
 const TURING_IN = ['saudacao', 'pergunta', 'tom'];
@@ -282,24 +360,26 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     cases: xorCases,
   },
   {
-    id: 'quadrantes',
+    id: 'contagem',
     pos: { x: 0.5, y: 0.2 },
     requires: ['xor'],
-    skin: 'field',
-    inputs: FIELD_IN,
-    extraInputs: FIELD_EXTRA,
-    outputs: ['invasor'],
-    targetLoss: 0.08,
-    budget: 15,
-    energy: 32,
+    skin: 'sorter',
+    inputs: SLOTS,
+    // Com o upgrade de sensores derivados, "soma" já conta as peças.
+    extraInputs: ['soma'],
+    outputs: ['embalar'],
+    layers: 2,
+    targetLoss: 0.1,
+    budget: 21,
+    energy: 46,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
-    train: quadrantes.train,
-    validation: quadrantes.validation,
-    reference: { topology: denseFrom(FIELD_IN, FIELD_IN, [3], ['invasor']) },
-    minHidden: 3,
-    cases: quadrantes.cases,
+    train: contagemTrain,
+    reference: { topology: fullyConnected(SLOTS, [3], ['embalar']) },
+    minHidden: 2,
+    cases: contagemCases,
     passRatio: 0.9,
   },
+
   {
     id: 'labirinto',
     pos: { x: 0.57, y: 0.62 },
@@ -307,6 +387,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     skin: 'maze',
     inputs: BEACON_IN,
     outputs: BEACON_OUT,
+    layers: 2,
     targetLoss: 0.05,
     budget: 20,
     energy: 44,
@@ -331,37 +412,32 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     },
   },
   {
-    id: 'ilha',
+    id: 'tangram',
     pos: { x: 0.66, y: 0.24 },
-    requires: ['quadrantes'],
-    skin: 'field',
-    inputs: FIELD_IN,
-    extraInputs: FIELD_EXTRA,
-    outputs: ['invasor'],
-    targetLoss: 0.08,
-    budget: 20,
-    energy: 40,
+    requires: ['contagem'],
+    skin: 'sorter',
+    inputs: TANGRAM_IN,
+    outputs: TANGRAM_OUT,
+    layers: 2,
+    targetLoss: 0.06,
+    budget: 27,
+    energy: 54,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
-    train: ilha.train,
-    validation: ilha.validation,
-    // Sem upgrades também dá (com sorte na semente); com x² e y² vira uma reta.
-    reference: {
-      topology: denseFrom(FIELD_IN, FIELD_IN, [4], ['invasor']),
-      hyper: { learningRate: 0.03, epochs: 800 },
-      earlyStop: true,
-      needs: ['epochs', 'earlystop'],
-    },
-    minHidden: 3,
-    cases: ilha.cases,
-    passRatio: 0.9,
+    train: tangramTrain,
+    // A cor da peça não importa: deixá-la sem cabo é parte da 3ª estrela.
+    reference: { topology: denseFrom(TANGRAM_IN, ['cantos', 'grande', 'inclinado'], [3], TANGRAM_OUT) },
+    minHidden: 2,
+    cases: tangramCases,
   },
+
   {
     id: 'captcha',
     pos: { x: 0.74, y: 0.72 },
-    requires: ['quadrantes', 'labirinto'],
+    requires: ['contagem', 'labirinto'],
     skin: 'captcha',
     inputs: ['cantos', 'ruido'],
     outputs: ['marcar'],
+    layers: 2,
     targetLoss: 0.05,
     budget: 8,
     energy: 22,
@@ -372,67 +448,62 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     minHidden: 2,
     cases: buildCaptcha(),
   },
+
   {
-    id: 'luas',
+    id: 'origami',
     pos: { x: 0.83, y: 0.34 },
-    requires: ['ilha'],
-    skin: 'field',
-    inputs: FIELD_IN,
-    extraInputs: FIELD_EXTRA,
-    outputs: ['invasor'],
-    targetLoss: 0.08,
-    budget: 20,
-    energy: 44,
+    requires: ['tangram'],
+    skin: 'origami',
+    inputs: ['posicao', 'espessura'],
+    outputs: ['montanha'],
+    layers: 3,
+    targetLoss: 0.07,
+    budget: 16,
+    energy: 36,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
-    train: luas.train,
-    validation: luas.validation,
-    reference: {
-      topology: denseFrom(FIELD_IN, FIELD_IN, [4], ['invasor']),
-      hyper: { learningRate: 0.03, epochs: 800 },
-      earlyStop: true,
-      needs: ['epochs', 'earlystop'],
-    },
+    train: origamiTrain,
+    validation: origamiVal,
+    // Quatro faixas alternadas = três dobras: um neurônio por dobra (ou um neurônio quântico, seno).
+    reference: { topology: denseFrom(['posicao', 'espessura'], ['posicao'], [4], ['montanha']) },
     minHidden: 3,
-    cases: luas.cases,
+    cases: origamiCases,
     passRatio: 0.9,
   },
+
   {
-    id: 'alvo',
+    id: 'quebracabeca',
     pos: { x: 0.9, y: 0.78 },
-    requires: ['luas', 'captcha'],
-    skin: 'field',
-    inputs: FIELD_IN,
-    extraInputs: FIELD_EXTRA,
-    outputs: ['invasor'],
-    targetLoss: 0.1,
-    budget: 12,
-    energy: 50,
+    requires: ['origami', 'captcha'],
+    skin: 'sorter',
+    inputs: PUZZLE_IN,
+    outputs: ['encaixar'],
+    layers: 3,
+    targetLoss: 0.06,
+    budget: 40,
+    energy: 80,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
-    train: alvo.train,
-    validation: alvo.validation,
-    // Com x² e y² o anel vira uma faixa: 2 neurônios resolvem.
-    reference: {
-      topology: denseFrom([...FIELD_IN, ...FIELD_EXTRA], ['x2', 'y2'], [2], ['invasor']),
-      hyper: { learningRate: 0.03, epochs: 800 },
-      needs: ['features', 'epochs'],
-    },
-    minHidden: 2,
-    cases: alvo.cases,
-    passRatio: 0.88,
+    train: puzzleTrain,
+    // Rede profunda: a 1ª camada compara cada borda, a 2ª exige as duas ao mesmo tempo.
+    reference: { topology: denseFrom(PUZZLE_IN, ['peca_cima', 'peca_baixo', 'vao_cima', 'vao_baixo'], [4, 2], ['encaixar']) },
+    minHidden: 3,
+    cases: puzzleCases,
   },
+
   {
     id: 'turing',
     pos: { x: 0.95, y: 0.16 },
-    requires: ['alvo'],
+    requires: ['quebracabeca'],
     skin: 'turing',
     inputs: TURING_IN,
     outputs: TURING_OUT,
+    layers: 3,
     targetLoss: 0.05,
-    budget: 27,
-    energy: 56,
+    budget: 42,
+    energy: 84,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: turingTrain,
-    reference: { topology: fullyConnected(TURING_IN, [3], TURING_OUT) },
+    // Duas camadas de 3: a 1ª lê o tom, a 2ª decide. "pergunta" não muda a resposta.
+    reference: { topology: denseFrom(TURING_IN, ['saudacao', 'tom'], [3, 3], TURING_OUT) },
     minHidden: 3,
     cases: turingCases,
   },

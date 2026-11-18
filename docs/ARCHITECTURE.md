@@ -108,9 +108,17 @@ lógicos; texto ≥ 16 px lógicos.
   novo, chame `state.bump('nome')` na cena certa e liste a chave em `SaveData.stats`.
 - Avatar: `core/progression/avatars.ts` e o desenho em `entities/Robot.ts`.
 
+### Tour guiado (missão-tutorial)
+- Roteiro em `ui/tourScript.ts` (sem Phaser, testável); motor em `ui/Tour.ts`.
+- Passos: `lesson` (lição n), `coach` (aponta um alvo; com `wait`, espera `tour:<wait>`), `event`.
+- Cada cena chama `runTour(this, 'Design' | 'Train' | 'Simulation', { targets, already })` e emite
+  `this.events.emit('tour:<nome>')` nas ações. O passo atual fica em `GameState.tourStep`.
+- Durante o tour: dicas soltas (`tip`) e cartas de treino ficam desligadas; `tourBlocks` impede
+  toques fora da área acesa no tabuleiro.
+
 ### Glossário, Academia e recapitulação
 - Verbete: um objeto em `services/i18n/glossary.ts` (`see` = relacionados).
-- Slide da Academia: textos `tut.<n>.*` e uma função de desenho em `SLIDES` (`TutorialScene`).
+- Lição: textos `tut.<n>.*` e uma função de desenho em `LESSONS` (`ui/lessons.ts`), usada pela Academia e pelo tour.
 - Recapitulação: texto `mission.<id>.recap` e termos sugeridos em `RECAP_TERMS` (`SimulationScene`).
 - Sensores/ações: nome `io.<id>` e descrição `io.<id>.d` (usados na Legenda do Design).
 

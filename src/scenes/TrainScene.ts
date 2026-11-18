@@ -42,6 +42,7 @@ import { NetworkView } from '../ui/NetworkView';
 import { celebrate, showToast, tip } from '../ui/Toast';
 import { burst, floatText, glow } from '../ui/fx';
 import { C, Rect, body, chamfer, css, offset, title } from '../ui/theme';
+import { runTour, touring } from '../ui/Tour';
 import { LineChart, StepSlider, addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
 
@@ -85,6 +86,8 @@ export class TrainScene extends BaseScene {
   private cardText!: Phaser.GameObjects.Text;
   private rateText!: Phaser.GameObjects.Text;
   private trainBtn!: NeonButton;
+  private shuffleBtn!: NeonButton;
+  private slidersRect!: Rect;
   private simBtn!: NeonButton;
   private bot!: Robot;
   private card: CardDef | null = null;
@@ -119,6 +122,11 @@ export class TrainScene extends BaseScene {
   /** Energia que ainda dá para gastar em treino. */
   private get reserve(): number {
     return Math.max(0, this.ceiling - this.designCost - this.spent);
+  }
+
+  /** A reserva não paga nem uma época: treinar (ou embaralhar para treinar de novo) não adianta mais. */
+  private outOfEnergy(): boolean {
+    return this.reserve < this.energyPerEpoch();
   }
 
   protected build(): void {
@@ -194,9 +202,23 @@ export class TrainScene extends BaseScene {
 
     this.updateReadout();
     this.updateHud();
-    if (this.reserve <= 0) this.noEnergy();
+    if (this.outOfEnergy()) this.noEnergy();
+    const tour = touring(m.id);
+    this.data.set('touring', tour);
     tip(this, 'resources');
     tip(this, 'loss');
+    if (tour) {
+      runTour(this, 'Train', {
+        targets: {
+          resources: () => ({ x: this.netRect.x, y: this.netRect.y, w: this.netRect.w, h: 58 }),
+          chart: () => this.lensRect,
+          sliders: () => this.slidersRect,
+          train: () => this.trainBtn.rect(),
+          sim: () => this.simBtn.rect(),
+        },
+        already: { trained: () => this.design.epochs > 0 && !this.running },
+      });
+    }
     if (d.assisted) {
       const h = d.hyper;
       showToast(this, { title: `✦ ${t('assist.s3.t')}`, text: t('assist.s3.d', { lr: h.learningRate, e: h.epochs, es: d.earlyStop ? t('assist.es') : '' }), color: C.magenta, life: 9000 });
@@ -291,6 +313,7 @@ export class TrainScene extends BaseScene {
       new StepSlider(this, ix + iw / 2 + 14, sy + 76, sw, t('train.dropout'), DROPOUT_VALUES, DROPOUT_VALUES.includes(d.hyper.dropout ?? 0) ? (d.hyper.dropout ?? 0) : 0, (v) => `${Math.round(v * 100)}%`, (v) => this.setHyper({ dropout: v }), C.violet);
     }
     const hasRow2 = this.caps.l2 || this.caps.dropout;
+    this.slidersRect = { x: ix - 6, y: sy - 8, w: iw + 12, h: hasRow2 ? 190 : 120 };
     this.rateText = body(this, ix + iw / 2, sy + (hasRow2 ? 162 : 92), this.rateLabel(), 16, C.text).setOrigin(0.5).setWordWrapWidth(iw).setAlign('center');
 
     const by = pr.y + pr.h - 34;
@@ -303,7 +326,7 @@ export class TrainScene extends BaseScene {
       }, { color: C.green, size: 12 });
       esBtn.setSelected(!!d.earlyStop);
     }
-    new NeonButton(this, ix + bw / 2, by, bw, 44, t('train.shuffle'), () => this.shuffle(), { color: C.orange, size: 13 });
+    this.shuffleBtn = new NeonButton(this, ix + bw / 2, by, bw, 44, t('train.shuffle'), () => this.shuffle(), { color: C.orange, size: 13 });
   }
 
   private setHyper(patch: Partial<Hyper>): void {
@@ -419,7 +442,7 @@ export class TrainScene extends BaseScene {
       this.persist({ params: this.trainer.params });
       return;
     }
-    if (this.reserve <= 0) return this.noEnergy();
+    if (this.outOfEnergy()) return this.noEnergy();
     if (this.trainer.done) {
       // Nova rodada: N épocas a partir dos pesos atuais. Loja na metade; destino talvez.
       const d = this.design;
@@ -431,9 +454,11 @@ export class TrainScene extends BaseScene {
       this.runEpochs = d.hyper.epochs;
       this.trainer.hyper.epochs = this.runEpochs;
       this.runStartLoss = this.trainer.loss;
-      this.shopAt = Math.floor(this.runEpochs / 2);
+      // Na missão-tutorial as cartas ficam de fora: uma coisa de cada vez.
+      const quiet = touring(this.mission.id);
+      this.shopAt = quiet ? -1 : Math.floor(this.runEpochs / 2);
       this.fateAt = -1;
-      if (Math.random() < FATE_CHANCE) {
+      if (!quiet && Math.random() < FATE_CHANCE) {
         // Longe da loja (que abre na metade).
         const f = Math.random() < 0.5 ? Phaser.Math.FloatBetween(0.15, 0.35) : Phaser.Math.FloatBetween(0.65, 0.85);
         this.fateAt = Math.floor(this.runEpochs * f);
@@ -451,7 +476,10 @@ export class TrainScene extends BaseScene {
   private noEnergy(): void {
     this.running = false;
     this.trainBtn.setEnabled(false).setLabel(t('train.noEnergyBtn'));
-    this.msg.setText(t('train.msg.noEnergy'));
+    // Embaralhar pesos sem energia para treinar de novo só apagaria o que a rede aprendeu.
+    this.shuffleBtn.setEnabled(false);
+    const d = this.design;
+    this.msg.setText(t(d.epochs > 0 && d.loss > this.mission.targetLoss ? 'train.msg.noEnergyBad' : 'train.msg.noEnergy'));
     this.bot.setMood('sad');
     audio.sfx('error');
     tip(this, 'energy', true);
@@ -492,7 +520,7 @@ export class TrainScene extends BaseScene {
     this.updateHud();
     tip(this, 'overheat', true);
     celebrate(this);
-    if (this.reserve <= 0) this.noEnergy();
+    if (this.outOfEnergy()) this.noEnergy();
   }
 
   private finishRun(): void {
@@ -535,12 +563,15 @@ export class TrainScene extends BaseScene {
 
     this.simBtn.setEnabled(true);
     this.trainBtn.setLabel(t('train.again'));
-    if (!msg) msg = exploded ? t('train.msg.exploded') : overfit ? t('train.msg.overfit') : t(good ? 'train.msg.good' : 'train.msg.stuck');
+    // A dica depende do que ainda dá para fazer: sem energia, embaralhar não adianta.
+    const broke = this.outOfEnergy();
+    if (!msg) msg = exploded ? t('train.msg.exploded') : overfit ? t('train.msg.overfit') : good ? t('train.msg.good') : t(stuck ? 'train.msg.stuck' : 'train.msg.high');
     this.msg.setText(msg);
     this.bot.setMood(good ? 'happy' : 'sad');
     if (exploded) tip(this, 'lr_high', true);
     else if (overfit) tip(this, 'overfit', true);
-    else if (stuck) tip(this, 'stuck', true);
+    else if (stuck && !broke) tip(this, 'stuck', true);
+    this.events.emit('tour:trained');
     if (good) {
       audio.sfx('win');
       this.bot.hop();
@@ -554,7 +585,7 @@ export class TrainScene extends BaseScene {
     this.updateReadout();
     this.updateHud();
     celebrate(this);
-    if (this.reserve <= 0) this.noEnergy();
+    if (this.outOfEnergy()) this.noEnergy();
   }
 
   private updateReadout(): void {
@@ -568,6 +599,7 @@ export class TrainScene extends BaseScene {
 
   private leave(key: 'Design' | 'Simulation'): void {
     if (key === 'Simulation' && !this.design.epochs) return;
+    if (key === 'Simulation') this.events.emit('tour:sim');
     // Sair no meio da rodada guarda os pesos e os recursos como estão.
     this.persist(this.running ? { params: this.trainer.params, card: this.card?.id ?? null } : {});
     this.go(key, { missionId: this.mission.id });

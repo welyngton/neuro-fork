@@ -20,20 +20,23 @@ MENU (opções + mapa de missões)
             └────────────┴───────────────┘   (pode voltar a qualquer momento)
 ```
 
-| # | Missão | Simulação | Conceito |
-|---|--------|-----------|----------|
-| 1 | Berçário | encaixar formas redondas/pontudas | neurônio único, sensores inúteis |
-| 2 | Triagem | só quadrado grande vai no buraco B | porta E, seleção de atributos |
-| 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação |
-| 4 | Corredor de Dados | atravessar um corredor sem bater | várias ações (argmax) |
-| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta com 2 neurônios |
-| 6 | Quadrantes | invasores em cantos opostos | XOR contínuo |
-| 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações |
-| 8 | Ilha | invasores numa ilha central | fronteira fechada / atributos |
-| 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído |
-| 10 | Duas Luas | frotas em meia-lua entrelaçadas | overfitting, parada antecipada |
-| 11 | Alvo | invasores em anel | engenharia de atributos |
-| 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa — zera o jogo |
+| # | Missão | Simulação | Conceito | Camadas |
+|---|--------|-----------|----------|---------|
+| 1 | Berçário (tutorial) | encaixar formas redondas/pontudas | neurônio único, sensores inúteis | 1 |
+| 2 | Triagem | só quadrado grande vai no buraco B | porta E, seleção de atributos | 1 |
+| 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação | 1 |
+| 4 | Corredor de Dados | atravessar um corredor sem bater | várias ações (argmax) | 1 |
+| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta com 2 neurônios | 1 |
+| 6 | Contagem | embalar bandejas com exatamente 2 peças | "nem menos, nem mais", atributo derivado | 2 |
+| 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 2 |
+| 8 | Tangram | montar o barco: vela, bandeira, casco, proa | multiclasse com 4 ações | 2 |
+| 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído | 2 |
+| 10 | Origami | vincos montanha/vale alternados na folha | padrões periódicos, ativação seno, ruído | 3 |
+| 11 | Quebra-cabeça | a peça encaixa se aba encontra recorte em cima E embaixo | rede profunda (XOR + E) | 3 |
+| 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa, 2 camadas — zera o jogo | 3 |
+
+As camadas ocultas oferecidas crescem pelo mapa (`MissionDef.layers`) e o upgrade CAMADA EXTRA
+soma mais uma (até 3). As referências das últimas missões são redes profundas.
 
 ## Regras de projeto
 
@@ -57,13 +60,17 @@ MENU (opções + mapa de missões)
 - **Ferramentas de Design liberadas pelo mapa** (`core/progression/tools.ts`): ATIVAÇÃO por
   neurônio (após a Triagem), SONDA (após a Fronteira), PODA do cabo mais fraco (após o XOR) e
   TRAVA de pesos (após o Labirinto).
-- **Loja**: as estrelas compram 14 upgrades — mais encaixes, segunda camada, liga-tudo, sensores
+- **Loja**: as estrelas compram 14 upgrades — mais encaixes, camada extra, liga-tudo, sensores
   derivados (x², y², x·y), bateria de grafeno (+30% de energia), cabos multidimensionais (cabo pela
   metade), neurônios quânticos (ativação seno) e radiais (gaussiana), rodadas de 800 épocas, parada
   antecipada, L2, dropout, radiador criogênico (+50% de água) e chip neuromórfico (-30% de energia
   por época).
-- **Academia**: tutorial ilustrado em 9 slides (ML, deep learning, sensores, neurônio, camadas
-  ocultas, ações, treino, simulação, ajudas).
+- **Missão-tutorial obrigatória** (com PULAR): no primeiro acesso o Berçário abre com o tour
+  guiado (`ui/Tour.ts`), que alterna as 9 lições ilustradas com passos práticos: um véu escuro
+  deixa aceso só o botão ou a área da vez, e o balão espera o jogador fazer a ação (pegar a
+  ferramenta, pôr o neurônio, ligar os cabos, treinar, simular).
+- **Academia**: as 9 lições em slides (ML, deep learning, sensores de formas, neurônio, camadas
+  ocultas, ações, treino, simulação, ajudas) e o botão TOUR GUIADO para refazer o tutorial.
 - **Glossário**: 44 termos pesquisáveis (sem acento/caixa), com "veja também".
 - **Legenda** no Design: o que cada sensor lê, o que é a camada oculta e o que cada ação faz.
 - **Assistente ✦ AUTO**: monta uma rede que funciona e explica cada escolha; a missão fica

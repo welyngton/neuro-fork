@@ -65,9 +65,13 @@ export class MenuScene extends BaseScene {
     this.buildBriefing();
     this.select(this.selected, false);
     celebrate(this);
-    // Primeiro acesso: abre a Academia (tutorial) sozinha.
-    // (A marca só é gravada pela Academia, para sobreviver a um reinício da cena ao girar a tela.)
-    if (!state.hasTip('academy_intro')) this.time.delayedCall(400, () => this.go('Tutorial'));
+    // Primeiro acesso: a missão-tutorial (Berçário com o tour guiado) é obrigatória — dá para pular lá dentro.
+    if (!state.hasTip('tour_started') && state.stars('bercario') === 0) {
+      this.time.delayedCall(400, () => {
+        state.startTour();
+        this.go('Design', { missionId: 'bercario' });
+      });
+    }
   }
 
   /* ------------------------------------------------------------------ lateral */
@@ -78,9 +82,9 @@ export class MenuScene extends BaseScene {
     glow(this, cx, 60, C.magenta, 2.6, 0.25);
     this.add.text(cx, 48, 'NEUROBOT', { fontFamily: FONT_TITLE, fontSize: '38px', fontStyle: '800', color: css(C.cyan) }).setOrigin(0.5).setShadow(3, 3, css(C.magenta), 0);
     body(this, cx, 82, t('menu.subtitle'), 16, C.magenta).setOrigin(0.5);
-    const mascot = new Robot(this, cx, 186, 0.95);
+    const mascot = new Robot(this, cx, 168, 0.82);
     this.time.addEvent({ delay: 4000, loop: true, callback: () => mascot.hop() });
-    body(this, cx, 268, `${t('avatar.level', { n: avatarLevel(state.totalStars) })}  ·  ${t('menu.balance', { n: state.balance })}`, 18, C.yellow).setOrigin(0.5);
+    body(this, cx, 240, `${t('avatar.level', { n: avatarLevel(state.totalStars) })}  ·  ${t('menu.balance', { n: state.balance })}`, 18, C.yellow).setOrigin(0.5);
 
     const nav: [string, number, () => void][] = [
       [t('menu.academy'), C.green, () => this.go('Tutorial')],
@@ -90,10 +94,11 @@ export class MenuScene extends BaseScene {
       [t('menu.achievements'), C.magenta, () => this.go('Achievements')],
       [t('menu.options'), C.text, () => this.openOptions()],
     ];
-    let y = 302;
+    // Botões abaixo do saldo, com folga (o texto não encosta no primeiro botão).
+    let y = 296;
     for (const [label, color, fn] of nav) {
-      new NeonButton(this, cx, y, SIDE_W - 50, 52, label, fn, { color, size: 17 });
-      y += 60;
+      new NeonButton(this, cx, y, SIDE_W - 50, 48, label, fn, { color, size: 17 });
+      y += 56;
     }
     const user = cloud.user;
     const status = !cloud.enabled ? 'opt.cloudOff' : user ? 'opt.cloudOn' : 'opt.cloudHint';
@@ -253,6 +258,7 @@ export class MenuScene extends BaseScene {
         g.fillStyle(C.dim).fillRect(-11, -5, 22, 17);
       }
       body(this, p.x, p.y + NODE_R + 6, t(`mission.${m.id}.title`), 15, unlocked ? C.text : C.dim).setOrigin(0.5, 0);
+      if (m.id === 'bercario') body(this, p.x, p.y + NODE_R + 26, t('menu.tutorialTag'), 13, C.magenta).setOrigin(0.5, 0);
       if (stars > 0) new StarRow(this, p.x, p.y - NODE_R - 14, 8, 4).setStars(stars);
 
       const zone = this.add.zone(p.x, p.y, NODE_R * 2 + 30, NODE_R * 2 + 30).setInteractive({ useHandCursor: true });

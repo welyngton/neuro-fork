@@ -24,7 +24,8 @@ import { GLOSSARY, GlossaryEntry, entryText } from '../services/i18n/glossary';
 import { NeonButton } from '../ui/NeonButton';
 import { celebrate, tip } from '../ui/Toast';
 import { burst } from '../ui/fx';
-import { C, body, title } from '../ui/theme';
+import { runTour, touring } from '../ui/Tour';
+import { C, Rect, body, title } from '../ui/theme';
 import { StarRow, addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
 import { SKINS } from './skins';
@@ -36,12 +37,12 @@ const RECAP_TERMS: Record<string, string[]> = {
   fronteira: ['fronteira', 'validacao', 'ruido'],
   corredor: ['argmax', 'acao', 'atributo'],
   xor: ['xor', 'camada_oculta', 'fronteira'],
-  quadrantes: ['espaco_oculto', 'camada_oculta', 'xor'],
+  contagem: ['camada_oculta', 'engenharia', 'atributo'],
   labirinto: ['argmax', 'camada_oculta', 'acao'],
-  ilha: ['fronteira', 'engenharia', 'camada_oculta'],
+  tangram: ['argmax', 'classificacao', 'atributo'],
   captcha: ['ativacao', 'atributo', 'ruido'],
-  luas: ['overfitting', 'early_stop', 'validacao'],
-  alvo: ['engenharia', 'atributo', 'fronteira'],
+  origami: ['ativacao', 'overfitting', 'validacao'],
+  quebracabeca: ['dl', 'camada_oculta', 'xor'],
   turing: ['classificacao', 'turing', 'dl'],
 };
 
@@ -57,6 +58,9 @@ export class SimulationScene extends BaseScene {
   private speedIndex = 0;
   /** Muda a cada execução/encerramento: laços antigos percebem e param. */
   private runToken = 0;
+  /** Painel de resultado e botão RECAPITULAR (o tour guiado aponta para eles). */
+  private resultRect: Rect | null = null;
+  private recapRect: Rect | null = null;
 
   constructor() {
     super('Simulation');
@@ -64,7 +68,7 @@ export class SimulationScene extends BaseScene {
 
   init(data: MissionSceneData): void {
     this.mission = getMission(data.missionId);
-    this.music = ['captcha', 'turing', 'alvo', 'luas'].includes(this.mission.id) ? 'boss' : 'sim';
+    this.music = ['captcha', 'turing', 'quebracabeca', 'origami'].includes(this.mission.id) ? 'boss' : 'sim';
   }
 
   protected build(): void {
@@ -104,6 +108,13 @@ export class SimulationScene extends BaseScene {
       hud: (s) => hudText.setText(s),
       predict: (inputs) => forward(this.topology, params, inputs, d.hyper.activation).outputs,
     });
+    const tour = touring(m.id);
+    this.data.set('touring', tour);
+    if (tour) {
+      runTour(this, 'Simulation', {
+        targets: { result: () => this.resultRect ?? rect, recap: () => this.recapRect ?? rect },
+      });
+    }
     if (m.validation) tip(this, 'generalize');
     else if (m.outputs.length > 1) tip(this, 'argmax');
     void this.run(skin.steps, (i) => skin.play(i));
@@ -285,8 +296,12 @@ export class SimulationScene extends BaseScene {
     else buttons.push([`◀ ${t('phase.train')}`, C.magenta, () => this.go('Train', { missionId: m.id })]);
     const bw = (pw - 60 - (buttons.length - 1) * 14) / buttons.length;
     buttons.forEach(([label, c, fn], i) => {
-      layer.add(new NeonButton(this, px + 30 + bw / 2 + i * (bw + 14), by, bw, 68, label, fn, { color: c, size: 18 }));
+      const b = new NeonButton(this, px + 30 + bw / 2 + i * (bw + 14), by, bw, 68, label, fn, { color: c, size: 18 });
+      layer.add(b);
+      if (i === 0) this.recapRect = b.rect();
     });
+    this.resultRect = { x: px, y: py + 110, w: pw, h: 180 };
+    this.events.emit('tour:result');
 
     layer.setAlpha(0);
     this.tweens.add({ targets: layer, alpha: 1, duration: 250 });

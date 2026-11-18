@@ -178,6 +178,8 @@ export class StarRow extends Phaser.GameObjects.Container {
       this.paint(g, !animate && i < n);
       if (animate && i < n) {
         this.scene.time.delayedCall(350 + i * 380, () => {
+          // A fileira pode ter sumido antes (ex.: lição do tour fechada às pressas).
+          if (!this.active) return;
           this.paint(g, true);
           audio.sfx('star', i * 4);
           this.scene.tweens.add({ targets: g, scale: { from: 2.2, to: 1 }, duration: 320, ease: 'Back.out' });

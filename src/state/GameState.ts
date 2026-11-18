@@ -84,10 +84,25 @@ export interface SaveData {
   achievements: Record<string, number>;
   /** Dicas educativas já mostradas ao menos uma vez. */
   tips: string[];
+  /** Tour guiado da missão-tutorial (Berçário): passo atual e se está em andamento. */
+  tour?: { step: number; active: boolean };
   updatedAt: number;
 }
 
 const STORAGE_KEY = 'neurobot.save.v2';
+
+/** Missões da v3.3 que foram trocadas na v3.4 (os quatro "campos 2D" quase iguais) -> a missão nova no mesmo lugar do mapa. */
+const RENAMED: Record<string, string> = { quadrantes: 'contagem', ilha: 'tangram', luas: 'origami', alvo: 'quebracabeca' };
+
+/** Leva as estrelas das missões trocadas para as novas (o desenho não serve mais e fica para trás). */
+function migrateMissions(save: SaveData): void {
+  for (const [from, to] of Object.entries(RENAMED)) {
+    const old = save.missions[from];
+    if (!old) continue;
+    save.missions[to] ??= { stars: old.stars, attempts: old.attempts, ...(old.clean !== undefined ? { clean: old.clean } : {}) };
+    delete save.missions[from];
+  }
+}
 
 function defaultSave(): SaveData {
   const lang = typeof navigator !== 'undefined' && !navigator.language.toLowerCase().startsWith('pt') ? 'en' : 'pt-BR';
@@ -126,7 +141,11 @@ export class GameState {
       const raw = this.storage?.getItem(STORAGE_KEY);
       const parsed = raw ? (JSON.parse(raw) as SaveData) : null;
       // Saves antigos não têm os campos novos: completamos com os padrões.
-      if (parsed?.version === 2) return { ...defaultSave(), ...parsed, settings: { ...defaultSave().settings, ...parsed.settings } };
+      if (parsed?.version === 2) {
+        const save = { ...defaultSave(), ...parsed, settings: { ...defaultSave().settings, ...parsed.settings } };
+        migrateMissions(save);
+        return save;
+      }
     } catch {
       /* save corrompido: começa do zero */
     }
@@ -250,6 +269,38 @@ export class GameState {
       this.commit();
     }
     return fresh;
+  }
+
+  /* ------------------------------------------------------------------ tour guiado */
+
+  /** O tour guiado (missão-tutorial) está em andamento? */
+  get tourActive(): boolean {
+    return !!this.data.tour?.active;
+  }
+
+  get tourStep(): number {
+    return this.data.tour?.step ?? 0;
+  }
+
+  setTourStep(step: number): void {
+    this.data.tour = { step, active: true };
+    this.commit();
+  }
+
+  /** Começa (ou recomeça) o tour: o Berçário volta a ficar em branco. */
+  startTour(): void {
+    this.data.tour = { step: 0, active: true };
+    const ms = this.data.missions.bercario;
+    if (ms) delete ms.design;
+    if (!this.data.tips.includes('tour_started')) this.data.tips.push('tour_started');
+    this.commit();
+  }
+
+  /** Encerra o tour (concluído ou pulado). */
+  endTour(): void {
+    this.data.tour = { step: this.tourStep, active: false };
+    if (!this.data.tips.includes('tour_done')) this.data.tips.push('tour_done');
+    this.commit();
   }
 
   /** A dica já foi vista? */

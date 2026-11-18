@@ -25,7 +25,7 @@ describe('GameState', () => {
     s.recordResult('triagem', 1, false);
     s.recordResult('fronteira', 1, false);
     s.recordResult('xor', 1, false);
-    s.recordResult('quadrantes', 1, false);
+    s.recordResult('contagem', 1, false);
     expect(s.isUnlocked('captcha')).toBe(false); // ainda falta o labirinto
     s.reset();
     expect(s.totalStars).toBe(0);
@@ -103,13 +103,31 @@ describe('board', () => {
   });
 
   it('AUTO liga tudo em tudo e os sensores derivados só aparecem com o upgrade', () => {
-    const m = getMission('ilha');
+    const m = getMission('fronteira');
     expect(blueprintFor(m, capsFor([])).inputs).toEqual(['x', 'y']);
     const bp = blueprintFor(m, capsFor(['features']));
     expect(bp.inputs).toContain('x2');
     const board = emptyBoard(bp);
     board.hidden[0][0] = board.hidden[0][1] = true;
     expect(autoWire(bp, board).length).toBe(5 * 2 + 2);
+  });
+
+  it('as camadas ocultas crescem ao longo do mapa e o upgrade soma mais uma (até 3)', () => {
+    expect(blueprintFor(getMission('bercario'), capsFor([])).layers).toBe(1);
+    expect(blueprintFor(getMission('bercario'), capsFor(['layer'])).layers).toBe(2);
+    expect(blueprintFor(getMission('tangram'), capsFor([])).layers).toBe(2);
+    expect(blueprintFor(getMission('turing'), capsFor([])).layers).toBe(3);
+    expect(blueprintFor(getMission('turing'), capsFor(['layer'])).layers).toBe(3);
+  });
+
+  it('saves antigos levam as estrelas das missões trocadas para as novas', () => {
+    const storage = memoryStorage();
+    const old = new GameState(storage).snapshot();
+    old.missions = { quadrantes: { stars: 2, attempts: 3 }, alvo: { stars: 1, attempts: 1 } };
+    storage.setItem('neurobot.save.v2', JSON.stringify(old));
+    const s = new GameState(storage);
+    expect(s.stars('contagem')).toBe(2);
+    expect(s.stars('quebracabeca')).toBe(1);
   });
 });
 

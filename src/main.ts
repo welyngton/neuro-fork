@@ -8,6 +8,7 @@ import '@fontsource/rajdhani/700.css';
 import './styles.css';
 import Phaser from 'phaser';
 import { audio, bootServices, state } from './app/services';
+import { TOUR } from './ui/tourScript';
 import { MISSIONS } from './core/missions/catalog';
 import { logicalWidth, watchViewport } from './app/viewport';
 import { installGoogleTag } from './services/googleTag';
@@ -60,7 +61,7 @@ async function start(): Promise<void> {
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
   }
   // Exposto para depuração no console e para os testes de fumaça.
-  Object.assign(window, { __game: game, __neuro: { state, MISSIONS } });
+  Object.assign(window, { __game: game, __neuro: { state, MISSIONS, TOUR } });
 }
 
 void start();

@@ -1,5 +1,6 @@
 /**
- * Teste de fumaça: abre o jogo num Chrome headless e joga as 12 missões de
+ * Teste de fumaça: abre o jogo num Chrome headless, joga o tour guiado da
+ * missão-tutorial como um jogador e depois as 12 missões de
  * ponta a ponta com a solução de referência de cada uma (comprando os upgrades
  * que ela exige), além de visitar loja, avatar, conquistas, o sorteio de cartas
  * do meio do treino, a sonda do Design e as lentes do treino.
@@ -37,13 +38,72 @@ const goto = async (page, key, data) => {
 };
 
 const page = await open(1280, 720);
-// Primeiro acesso: a Academia (tutorial) abre sozinha.
-await page.waitForFunction(() => window.__game.scene.isActive('Tutorial'), null, { timeout: 8000 });
-await page.waitForTimeout(800); await shot(page, '00a-academia-1');
+// Primeiro acesso: a missão-tutorial (Berçário com tour guiado) abre sozinha.
+// Joga o tour inteiro clicando como um jogador: CONTINUAR/ENTENDI e as ações pedidas.
+await page.waitForFunction(() => window.__game.scene.isActive('Design'), null, { timeout: 8000 });
+{
+  const TOUR = await page.evaluate(() => window.__neuro.TOUR);
+  const tourShots = { 0: '00a-tour-licao1', 3: '00b-tour-sensores', 8: '00c-tour-encaixe', 11: '00d-tour-ligar', 17: '00e-tour-recursos', 20: '00f-tour-treinar', 24: '00g-tour-estrelas', 26: '00h-tour-ultima-licao' };
+  const cur = () => page.evaluate(() => { const g = window.__game; const s = g.scene.getScenes(true)[0]; return { step: window.__neuro.state.tourStep, active: window.__neuro.state.tourActive, scene: s.scene.key, ok: s.data.get('tourOk') }; });
+  const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  let guard = 0;
+  for (;;) {
+    if (++guard > 600) throw new Error('tour não terminou: ' + JSON.stringify(await cur()) + ' ' + errors.join(' | '));
+    let c = await cur();
+    if (!c.active) break;
+    const step = TOUR[c.step];
+    if (step.scene !== c.scene) { await page.waitForTimeout(400); continue; }
+    // Espera o balão/lição aparecer (o runner entra 250 ms depois da cena).
+    if (!('event' in step)) {
+      await page.waitForFunction(() => { const s = window.__game.scene.getScenes(true)[0]; return !!(s.data.get('tourOk') || s.data.get('tourHole')); }, null, { timeout: 15000 });
+    }
+    await page.waitForTimeout(500);
+    c = await cur();
+    if (tourShots[c.step]) await shot(page, tourShots[c.step]);
+    const before = c.step;
+    if ('event' in step) {
+      await page.mouse.click(1200, 677); // PULAR a simulação
+      await page.waitForFunction((b) => window.__neuro.state.tourStep !== b, before, { timeout: 120000 });
+      continue;
+    }
+    if (!step.wait) {
+      if (!c.ok) throw new Error('tour sem botão de avançar no passo ' + c.step);
+      await page.mouse.click(c.ok.x, c.ok.y);
+    } else {
+      const w = step.wait;
+      if (w === 'tool_neuron' || w === 'tool_cable') {
+        const r = await page.evaluate((k) => window.__game.scene.getScene('Design').toolButtons[k].rect(), w.slice(5));
+        const p = center(r); await page.mouse.click(p.x, p.y);
+      } else if (w === 'neuron') {
+        const h = await page.evaluate(() => window.__game.scene.getScene('Design').view.posOf('h0_0'));
+        await page.mouse.click(h.x, h.y);
+      } else if (w === 'valid') {
+        const q = await page.evaluate(() => { const v = window.__game.scene.getScene('Design').view; return { a: v.posOf('cantos'), h: v.posOf('h0_0'), b: v.posOf('buraco_b') }; });
+        await page.mouse.move(q.a.x, q.a.y); await page.mouse.down(); await page.mouse.move(q.h.x, q.h.y, { steps: 6 }); await page.mouse.up();
+        await page.mouse.click(q.h.x, q.h.y); await page.mouse.click(q.b.x, q.b.y);
+      } else if (w === 'train') {
+        const p = center(await page.evaluate(() => window.__game.scene.getScene('Design').nextBtn.rect())); await page.mouse.click(p.x, p.y);
+      } else if (w === 'trained') {
+        const p = center(await page.evaluate(() => window.__game.scene.getScene('Train').trainBtn.rect())); await page.mouse.click(p.x, p.y);
+      } else if (w === 'sim') {
+        const p = center(await page.evaluate(() => window.__game.scene.getScene('Train').simBtn.rect())); await page.mouse.click(p.x, p.y);
+      }
+    }
+    await page.waitForFunction((b) => window.__neuro.state.tourStep !== b || !window.__neuro.state.tourActive, before, { timeout: 60000 }).catch(async () => {
+      await shot(page, 'erro-tour');
+      throw new Error(`tour travou no passo ${before} (${JSON.stringify(step)})`);
+    });
+  }
+  const b = await page.evaluate(() => ({ stars: window.__neuro.state.stars('bercario'), links: window.__neuro.state.design('bercario').board.links.length }));
+  console.log('tour concluído · berçário:', JSON.stringify(b));
+  if (b.links !== 2) throw new Error('o tour deveria terminar com cantos → neurônio → buraco B');
+  await page.waitForTimeout(800); await shot(page, '00i-tour-fim');
+}
+await goto(page, 'Tutorial');
+await page.waitForTimeout(800); await shot(page, '00j-academia-1');
 for (let i = 0; i < 4; i++) await page.evaluate(() => window.__game.scene.getScene('Tutorial').show(window.__game.scene.getScene('Tutorial').index + 1));
-await page.waitForTimeout(700); await shot(page, '00b-academia-5');
-await page.evaluate(() => window.__game.scene.getScene('Tutorial').go('Menu'));
-await page.waitForFunction(() => window.__game.scene.isActive('Menu'));
+await page.waitForTimeout(700); await shot(page, '00k-academia-5');
+await goto(page, 'Menu');
 await page.waitForTimeout(700);
 await shot(page, '01-menu');
 // Glossário com busca.
@@ -59,7 +119,9 @@ if (!found.includes('overfitting')) throw new Error('busca do glossário falhou:
 
 // Edição manual no Design: neurônio, cabo arrastado, toque-toque, cabo direto
 // sensor->ação (proibido) e borracha.
+await page.evaluate(() => { const st = window.__neuro.state; const d = st.design('bercario'); d.board.hidden = d.board.hidden.map((c) => c.map(() => false)); d.board.links = []; st.saveDesign('bercario', { board: d.board }); });
 await goto(page, 'Design', { missionId: 'bercario' });
+await page.evaluate(() => window.__game.scene.getScene('Design').openLegend());
 await page.waitForTimeout(700); await shot(page, '02a-legenda');
 await closePopup(page);
 {
@@ -123,13 +185,13 @@ for (const id of ids) {
     }
     await page.waitForTimeout(400);
     if (attempt === 1) await shot(page, `04-train-${id}`);
-    if (id === 'quadrantes' && attempt === 1) {
+    if (id === 'fronteira' && attempt === 1) {
       await page.evaluate(() => window.__game.scene.getScene('Train').setLens('boundary'));
       await page.waitForTimeout(500); await shot(page, '04f-lente-fronteira');
       await page.evaluate(() => window.__game.scene.getScene('Train').setLens('space'));
       await page.waitForTimeout(500); await shot(page, '04c-lente-espaco');
     }
-    if (id === 'ilha' && attempt === 1) {
+    if (id === 'tangram' && attempt === 1) {
       await goto(page, 'Design', { missionId: id });
       await page.waitForTimeout(1200); await shot(page, '04d-design-ferramentas');
       await page.evaluate(() => window.__game.scene.getScene('Design').openProbe('h0_0'));
@@ -145,8 +207,8 @@ for (const id of ids) {
     if (stars < 2) await page.evaluate((id) => { const s = window.__neuro.state; s.saveDesign(id, { seed: s.design(id).seed + 1, params: null, epochs: 0, trainSpent: 0, water: undefined }); }, id);
     else {
       await shot(page, `06-result-${id}`);
-      if (id === 'quadrantes') {
-        await page.evaluate(() => window.__game.scene.getScene('Simulation').openRecap(true, 12));
+      if (id === 'quebracabeca') {
+        await page.evaluate(() => window.__game.scene.getScene('Simulation').openRecap(true, 40));
         await page.waitForTimeout(500); await shot(page, '06b-recapitular');
       }
     }
@@ -184,6 +246,10 @@ await page.close();
 
 // Celular deitado (844x390) e retrato.
 const phone = await open(844, 390);
+await active(phone, 'Design');
+await phone.waitForTimeout(1200); await shot(phone, '12a-celular-tour');
+await phone.evaluate(() => window.__neuro.state.endTour());
+await goto(phone, 'Menu');
 await shot(phone, '12-celular-menu');
 await goto(phone, 'Design', { missionId: 'bercario' });
 await shot(phone, '13-celular-design');

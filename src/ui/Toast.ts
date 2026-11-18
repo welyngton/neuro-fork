@@ -86,6 +86,8 @@ export function showToast(scene: Phaser.Scene, o: ToastOptions): void {
  */
 export function tip(scene: Phaser.Scene, id: string, always = false): void {
   const key = `tip:${id}`;
+  // Durante o tour guiado as dicas soltas esperam: elas apareceriam por cima dos balões.
+  if (scene.data.get('touring')) return;
   const first = state.markTip(id);
   if (scene.data.get(key) || (!first && !always)) return;
   scene.data.set(key, true);

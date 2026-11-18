@@ -36,8 +36,8 @@ export const UPGRADES: UpgradeDef[] = [
 
 /** Limites e ferramentas disponíveis para um conjunto de upgrades. */
 export interface Caps {
-  /** Colunas de neurônios ocultos no editor. */
-  layers: number;
+  /** Camadas ocultas além das que a missão oferece (upgrade "camada extra"). */
+  extraLayers: number;
   /** Encaixes por coluna oculta. */
   slots: number;
   /** Botão LIGAR TUDO (liga tudo em tudo). */
@@ -67,7 +67,7 @@ export function capsFor(owned: readonly string[]): Caps {
   if (has('quantum')) activations.push('sine');
   if (has('radial')) activations.push('gauss');
   return {
-    layers: has('layer') ? 2 : 1,
+    extraLayers: has('layer') ? 1 : 0,
     slots: has('slots') ? 6 : 4,
     autowire: has('autowire'),
     features: has('features'),

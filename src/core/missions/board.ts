@@ -14,6 +14,9 @@ import { Activation, Topology, linkKey } from '../nn/network';
 import { Caps } from '../progression/upgrades';
 import { MissionDef } from './types';
 
+/** Teto de camadas ocultas do editor. */
+export const MAX_LAYERS = 3;
+
 /** Planta do editor para uma missão + upgrades. */
 export interface Blueprint {
   inputs: string[];
@@ -28,7 +31,7 @@ export function blueprintFor(m: MissionDef, caps: Caps): Blueprint {
   return {
     inputs: caps.features && m.extraInputs ? [...m.inputs, ...m.extraInputs] : m.inputs,
     outputs: m.outputs,
-    layers: caps.layers,
+    layers: Math.min(MAX_LAYERS, (m.layers ?? 1) + caps.extraLayers),
     slots: caps.slots,
   };
 }

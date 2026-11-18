@@ -32,6 +32,11 @@ export class NeonButton extends Phaser.GameObjects.Container {
   private selected = false;
   private enabled = true;
 
+  /** Retângulo ocupado na tela (para o tour guiado apontar o botão). */
+  rect(): { x: number; y: number; w: number; h: number } {
+    return { x: this.x - this.boxW / 2, y: this.y - this.boxH / 2, w: this.boxW, h: this.boxH };
+  }
+
   constructor(
     scene: Phaser.Scene,
     x: number,

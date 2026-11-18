@@ -9,7 +9,7 @@ import { ClassCase } from '../simulation/classification';
 import { MazeConfig } from '../simulation/maze';
 
 /** Skin = "como a simulação é desenhada". Cada valor tem um arquivo em `scenes/skins`. */
-export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing' | 'field';
+export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing' | 'field' | 'origami';
 
 /** Um exemplo rotulado com as leituras por NOME de sensor (inclui sensores derivados). */
 export interface DataPoint {
@@ -19,13 +19,23 @@ export interface DataPoint {
 
 /** Dados visuais de um item da esteira (skin `sorter`). */
 export interface SorterVisual {
-  shape: 'circle' | 'triangle' | 'square' | 'chip';
+  /**
+   * `chip` = chip de dois LEDs (XOR); `tray` = bandeja com encaixes (Contagem);
+   * `parallelogram` = peça inclinada do Tangram; `puzzle` = peça de quebra-cabeça
+   * diante do vão onde deve encaixar.
+   */
+  shape: 'circle' | 'triangle' | 'square' | 'chip' | 'tray' | 'parallelogram' | 'puzzle';
   big?: boolean;
   /** Cor alternativa (sensor "cor" da Triagem). */
   alt?: boolean;
   /** Para `chip`: estado dos dois LEDs. */
   a?: number;
   b?: number;
+  /** Para `tray`: o que há em cada encaixe (null = vazio). */
+  cells?: (('circle' | 'triangle' | 'square') | null)[];
+  /** Para `puzzle`: bordas da peça e do vão (1 = aba para fora, 0 = recorte). */
+  piece?: [number, number];
+  hole?: [number, number];
 }
 
 /** Dados visuais de um quadro do CAPTCHA. */
@@ -40,6 +50,11 @@ export interface CaptchaVisual {
 /** Dados de uma rodada do Teste de Turing: índice das falas em `turing.q{n}` / `turing.a{n}`. */
 export interface TuringVisual {
   n: number;
+}
+
+/** Vinco da folha de origami (skin `origami`): posição ao longo do papel, -1..1. */
+export interface OrigamiVisual {
+  x: number;
 }
 
 /** Ponto do campo 2D (skin `field`), em coordenadas -1..1. */
@@ -62,6 +77,12 @@ export interface MissionDef {
   extraInputs?: string[];
   /** Ações disponíveis. */
   outputs: string[];
+  /**
+   * Camadas ocultas que o tabuleiro oferece nesta missão (padrão 1). Cresce ao
+   * longo do mapa — 1 no começo, 2 no meio, 3 no fim — e o upgrade "camada
+   * extra" soma mais uma (até 3).
+   */
+  layers?: number;
   /** Perda máxima (na validação, se houver) para a 2ª estrela. */
   targetLoss: number;
   /**

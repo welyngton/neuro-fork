@@ -80,7 +80,23 @@ describe('missões', () => {
     for (const m of MISSIONS) for (const r of m.requires) expect(ids.has(r)).toBe(true);
   });
 
+  it('as camadas oferecidas nunca diminuem e terminam em redes profundas', () => {
+    const layers = MISSIONS.map((m) => m.layers ?? 1);
+    for (let i = 1; i < layers.length; i++) expect(layers[i]).toBeGreaterThanOrEqual(layers[i - 1]);
+    expect(layers[layers.length - 1]).toBe(3);
+    // As duas últimas missões têm referência com 2 camadas ocultas.
+    for (const m of MISSIONS.slice(-2)) expect(m.reference.topology.hidden.length).toBeGreaterThanOrEqual(2);
+  });
+
   for (const m of MISSIONS) {
+    it(`${m.id}: a referência cabe no tabuleiro sem upgrades (o assistente AUTO consegue montá-la)`, () => {
+      const t = m.reference.topology;
+      expect(t.hidden.length).toBeLessThanOrEqual(m.layers ?? 1);
+      for (const layer of t.hidden) expect(layer.length).toBeLessThanOrEqual(4);
+      for (const [a] of t.links) expect(m.inputs.includes(a) || /^h/.test(a)).toBe(true);
+      expect([50, 100, 200]).toContain({ ...m.defaults, ...m.reference.hyper }.epochs);
+    });
+
     it(`${m.id}: rede com pesos zerados NÃO vence`, () => {
       const t = m.reference.topology;
       const p = initParams(t, 1);
@@ -112,8 +128,7 @@ describe('missões', () => {
     if (min > 1) {
       it(`${m.id}: com ${min - 1} neurônio(s) oculto(s) a rede NÃO resolve`, () => {
         // Só com os sensores básicos (no Alvo, com os derivados: é a rota de referência).
-        const ins = m.id === 'alvo' ? [...m.inputs, ...(m.extraInputs ?? [])] : m.inputs;
-        const small = fullyConnected(ins, [min - 1], m.outputs);
+        const small = fullyConnected(m.inputs, [min - 1], m.outputs);
         let twoStars = 0;
         for (let seed = 1; seed <= 5; seed++) {
           const r = attempt(m, small, seed, false, { ...m.defaults, epochs: 800 });

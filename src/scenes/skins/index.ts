@@ -6,6 +6,7 @@ import { SkinId } from '../../core/missions/types';
 import { captchaSkin } from './captcha';
 import { fieldSkin } from './field';
 import { mazeSkin } from './maze';
+import { origamiSkin } from './origami';
 import { sorterSkin } from './sorter';
 import { turingSkin } from './turing';
 import { SkinFactory } from './types';
@@ -16,4 +17,5 @@ export const SKINS: Record<SkinId, SkinFactory> = {
   captcha: captchaSkin,
   turing: turingSkin,
   field: fieldSkin,
+  origami: origamiSkin,
 };

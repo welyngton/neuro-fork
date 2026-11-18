@@ -1,8 +1,11 @@
 /**
  * @module scenes/skins/sorter
  * Skin "brinquedo de encaixar": itens chegam pela esteira e o robô arremessa
- * cada um no buraco A ou B. Usada pelo Berçário, Triagem e Paradoxo XOR
- * (no XOR o item é um chip com dois LEDs).
+ * cada um num buraco. Com UMA ação há dois buracos (A = sinal fraco, B = forte);
+ * com várias ações há um buraco por ação (vence a mais forte).
+ *
+ * Usada pelo Berçário, Triagem, Paradoxo XOR (chip de dois LEDs), Contagem
+ * (bandeja com encaixes), Tangram (peças do barco) e Quebra-cabeça (peça e vão).
  */
 import Phaser from 'phaser';
 import { audio } from '../../app/services';
@@ -14,10 +17,70 @@ import { burst, floatText } from '../../ui/fx';
 import { C, body, chamfer, css, offset, regularPoly, title } from '../../ui/theme';
 import { SkinFactory } from './types';
 
-/** Desenha o item (forma geométrica ou chip) num container novo. */
+const V = (x: number, y: number) => new Phaser.Math.Vector2(x, y);
+
+/** Forma pequena (círculo, triângulo ou quadrado) centrada em (x, y). */
+function miniShape(g: Phaser.GameObjects.Graphics, shape: 'circle' | 'triangle' | 'square', x: number, y: number, r: number): void {
+  const color = shape === 'circle' ? C.cyan : shape === 'triangle' ? C.yellow : C.magenta;
+  g.fillStyle(color, 0.35).lineStyle(3, color);
+  if (shape === 'circle') g.fillCircle(x, y, r).strokeCircle(x, y, r);
+  else {
+    const pts = offset(shape === 'triangle' ? regularPoly(3, r * 1.15) : regularPoly(4, r * 1.25, Math.PI / 4), x, y);
+    g.fillPoints(pts, true).strokePoints(pts, true, true);
+  }
+}
+
+/**
+ * Contorno de uma peça de quebra-cabeça de lado `s`: cada borda de cima/baixo
+ * tem uma ABA (1, para fora) ou um RECORTE (0, para dentro).
+ */
+function puzzleOutline(cx: number, cy: number, s: number, top: number, bottom: number): Phaser.Math.Vector2[] {
+  const h = s / 2;
+  const tab = (x0: number, y0: number, dir: number, out: number) => {
+    // Semicírculo no meio da borda, para fora (out=1) ou para dentro (out=0).
+    const pts: Phaser.Math.Vector2[] = [];
+    const sign = out ? dir : -dir;
+    for (let k = 0; k <= 10; k++) {
+      const a = Math.PI - (k / 10) * Math.PI;
+      pts.push(V(x0 + Math.cos(a) * s * 0.18 * -dir, y0 - Math.sin(a) * s * 0.2 * sign));
+    }
+    return pts;
+  };
+  return [
+    V(cx - h, cy - h),
+    ...tab(cx, cy - h, -1, top),
+    V(cx + h, cy - h),
+    V(cx + h, cy + h),
+    ...tab(cx, cy + h, 1, bottom),
+    V(cx - h, cy + h),
+  ];
+}
+
+/** Desenha o item (forma geométrica, chip, bandeja ou peça) num container novo. */
 function makeItem(scene: Phaser.Scene, v: SorterVisual): Phaser.GameObjects.Container {
   const g = scene.add.graphics();
-  if (v.shape === 'chip') {
+  if (v.shape === 'tray') {
+    // Bandeja com 4 encaixes: o robô precisa CONTAR as peças.
+    const cells = v.cells ?? [];
+    g.fillStyle(0x1b1838).fillPoints(chamfer(196, 64, 10), true).lineStyle(3, C.orange).strokePoints(chamfer(196, 64, 10), true, true);
+    cells.forEach((c, i) => {
+      const x = -72 + i * 48;
+      g.lineStyle(2, C.dim).strokeRect(x - 20, -22, 40, 44);
+      if (c) miniShape(g, c, x, 0, 14);
+    });
+  } else if (v.shape === 'puzzle') {
+    // À esquerda a peça; à direita o vão (tracejado) onde ela precisa entrar.
+    const [pc, pb] = v.piece ?? [0, 0];
+    const [vc, vb] = v.hole ?? [0, 0];
+    const color = v.alt ? C.orange : C.green;
+    const piece = puzzleOutline(-50, 0, 70, pc, pb);
+    g.fillStyle(color, 0.35).fillPoints(piece, true).lineStyle(3, color).strokePoints(piece, true, true);
+    const hole = puzzleOutline(50, 0, 70, vc, vb);
+    g.fillStyle(0x000000, 0.7).fillPoints(hole, true);
+    hole.forEach((p, i) => {
+      if (i % 2 === 0) g.lineStyle(3, C.text, 0.8).lineBetween(p.x, p.y, hole[(i + 1) % hole.length].x, hole[(i + 1) % hole.length].y);
+    });
+  } else if (v.shape === 'chip') {
     g.fillStyle(0x1b1838).fillPoints(chamfer(110, 64, 10), true);
     g.lineStyle(3, C.violet).strokePoints(chamfer(110, 64, 10), true, true);
     [v.a, v.b].forEach((on, i) => {
@@ -31,7 +94,10 @@ function makeItem(scene: Phaser.Scene, v: SorterVisual): Phaser.GameObjects.Cont
     const color = v.alt !== undefined ? (v.alt ? C.orange : C.green) : v.shape === 'circle' ? C.cyan : v.shape === 'triangle' ? C.yellow : C.magenta;
     g.fillStyle(color, 0.3).lineStyle(4, color);
     if (v.shape === 'circle') g.fillCircle(0, 0, r).strokeCircle(0, 0, r);
-    else {
+    else if (v.shape === 'parallelogram') {
+      const pts = [V(-r * 0.6, -r * 0.6), V(r * 1.3, -r * 0.6), V(r * 0.6, r * 0.6), V(-r * 1.3, r * 0.6)];
+      g.fillPoints(pts, true).strokePoints(pts, true, true);
+    } else {
       const pts = v.shape === 'triangle' ? regularPoly(3, r * 1.15) : regularPoly(4, r * 1.25, Math.PI / 4);
       g.fillPoints(pts, true).strokePoints(pts, true, true);
     }
@@ -45,10 +111,13 @@ export const sorterSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
   const cy = rect.y + rect.h * 0.5;
   const beltY = cy + 84;
   const binX = rect.x + rect.w - 180;
-  const bins = [
-    { x: binX, y: cy - 120, label: t(`mission.${mission.id}.binA`), color: C.cyan },
-    { x: binX, y: cy + 120, label: t(`mission.${mission.id}.binB`), color: C.magenta },
-  ];
+  // Uma ação: buracos A (fraco) e B (forte). Várias: um buraco por ação.
+  const multi = mission.outputs.length > 1;
+  const COLORS = [C.cyan, C.magenta, C.yellow, C.green];
+  const labels = multi ? mission.outputs.map((id) => t(`io.${id}`).toUpperCase()) : [t(`mission.${mission.id}.binA`), t(`mission.${mission.id}.binB`)];
+  const n = labels.length;
+  const binH = Math.min(150, (rect.h - 30) / n - 12);
+  const bins = labels.map((label, i) => ({ x: binX, y: cy + (i - (n - 1) / 2) * (binH + 12), label, color: COLORS[i % COLORS.length], tag: multi ? label : i ? 'B' : 'A' }));
 
   // Esteira com setas correndo.
   const belt = scene.add.graphics();
@@ -62,11 +131,11 @@ export const sorterSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
   // Buracos.
   const binGfx = bins.map((b) => {
     const g = scene.add.graphics({ x: b.x, y: b.y });
-    g.fillStyle(C.panel, 0.9).fillPoints(chamfer(300, 150, 18), true);
-    g.lineStyle(3, b.color).strokePoints(chamfer(300, 150, 18), true, true);
-    g.fillStyle(0x000000, 0.8).fillPoints(chamfer(150, 70, 12), true);
-    g.lineStyle(2, b.color, 0.6).strokePoints(chamfer(150, 70, 12), true, true);
-    body(scene, b.x, b.y - 70, b.label, 20, b.color).setOrigin(0.5, 0);
+    g.fillStyle(C.panel, 0.9).fillPoints(chamfer(300, binH, 18), true);
+    g.lineStyle(3, b.color).strokePoints(chamfer(300, binH, 18), true, true);
+    g.fillStyle(0x000000, 0.8).fillPoints(chamfer(150, binH * 0.46, 12), true);
+    g.lineStyle(2, b.color, 0.6).strokePoints(chamfer(150, binH * 0.46, 12), true, true);
+    body(scene, b.x, b.y - binH / 2 + 6, b.label, multi ? 17 : 20, b.color).setOrigin(0.5, 0);
     return g;
   });
 
@@ -88,9 +157,10 @@ export const sorterSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
 
       // "Pensando": mostra a saída da rede.
       bot.setMood('think');
-      const out = Object.values(step.outputs)[0];
-      hud(`${Object.entries(step.case.inputs).map(([k, v]) => `${t(`io.${k}`)} ${v.toFixed(2)}`).join('  ·  ')}   →   ${out.toFixed(2)}`);
-      thought.setText(`${step.chosen ? 'B' : 'A'}  ${out.toFixed(2)}`).setColor(css(bins[step.chosen].color));
+      const out = multi ? step.outputs[mission.outputs[step.chosen]] : Object.values(step.outputs)[0];
+      const shown = Object.entries(step.case.inputs).filter(([k]) => mission.inputs.includes(k));
+      hud(`${shown.map(([k, v]) => `${t(`io.${k}`)} ${v.toFixed(2)}`).join('  ·  ')}   →   ${out.toFixed(2)}`);
+      thought.setText(`${bins[step.chosen].tag}  ${out.toFixed(2)}`).setColor(css(bins[step.chosen].color));
       audio.sfx('tick', step.chosen ? 7 : 0);
       await scene.wait(320);
 

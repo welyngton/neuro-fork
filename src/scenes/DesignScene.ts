@@ -53,6 +53,7 @@ import { NetworkView } from '../ui/NetworkView';
 import { celebrate, showToast, tip } from '../ui/Toast';
 import { burst, floatText } from '../ui/fx';
 import { C, body, css, regularPoly, title } from '../ui/theme';
+import { runTour, tourBlocks, touring } from '../ui/Tour';
 import { addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
 
@@ -106,6 +107,8 @@ export class DesignScene extends BaseScene {
   private hint!: Phaser.GameObjects.Text;
   private bot!: Robot;
   private nextBtn!: NeonButton;
+  private legendBtn!: NeonButton;
+  private boardRect!: { x: number; y: number; w: number; h: number };
   private popup: Phaser.GameObjects.Container | null = null;
 
   constructor() {
@@ -135,13 +138,16 @@ export class DesignScene extends BaseScene {
     const top = this.addTopBar(m, 'design');
     const barH = 96;
     const boardRect = { x: 16, y: top + 10, w: this.W - 32, h: this.H - top - barH - 82 };
+    this.boardRect = boardRect;
+    const tour = touring(m.id);
+    this.data.set('touring', tour);
     addPanel(this, boardRect, C.panelEdge, 0.55);
     this.view = new NetworkView(this, this.bp, this.board, boardRect, { showSlots: true, showHeaders: true, labelPad: 200 });
     if (m.skin === 'field') this.addDataPreview(boardRect.x + boardRect.w - 150, boardRect.y + boardRect.h - 150);
 
     // LEGENDA, DESFAZER e BOMBA ficam no meio da barra superior.
     const tb = 104;
-    new NeonButton(this, this.W / 2 - tb - 6, top / 2, tb, 42, t('design.legend'), () => this.openLegend(), { color: C.cyan, size: 13 });
+    this.legendBtn = new NeonButton(this, this.W / 2 - tb - 6, top / 2, tb, 42, t('design.legend'), () => this.openLegend(), { color: C.cyan, size: 13 });
     new NeonButton(this, this.W / 2, top / 2, tb, 42, `↶ ${t('design.tool.undo')}`, () => this.undo(), { color: C.text, size: 13 });
     new NeonButton(this, this.W / 2 + tb + 6, top / 2, tb, 42, `● ${t('design.tool.clear')}`, () => this.clearAll(), { color: C.red, size: 13 });
 
@@ -156,9 +162,44 @@ export class DesignScene extends BaseScene {
     this.buildHotbar(barH);
     this.bindPointer();
     this.refresh(false);
+    if (tour) {
+      this.startTour();
+      return;
+    }
     this.announceTools();
     // Primeira visita a esta missão: abre a legenda dos sensores e ações.
     if (state.markTip(`legend_${m.id}`)) this.time.delayedCall(350, () => this.openLegend());
+  }
+
+  /** Missão-tutorial: lições intercaladas com passos nesta tela (ver `ui/Tour.ts`). */
+  private startTour(): void {
+    state.markTip(`legend_${this.mission.id}`);
+    const v = this.view;
+    const r = v.radius;
+    const box = (ids: string[], left: number, right: number) => {
+      const ps = ids.map((id) => v.posOf(id));
+      const xs = ps.map((p) => p.x);
+      const ys = ps.map((p) => p.y);
+      return { x: Math.min(...xs) - left, y: Math.min(...ys) - r - 6, w: Math.max(...xs) - Math.min(...xs) + left + right, h: Math.max(...ys) - Math.min(...ys) + 2 * r + 12 };
+    };
+    const slots = Array.from({ length: this.bp.slots }, (_, k) => slotId(0, k));
+    runTour(this, 'Design', {
+      targets: {
+        board: () => this.boardRect,
+        sensors: () => box(this.bp.inputs, 150, r + 6),
+        actions: () => box(this.bp.outputs, r + 6, 160),
+        slots: () => box(slots, r + 10, r + 10),
+        tool_neuron: () => this.toolButtons.neuron!.rect(),
+        tool_cable: () => this.toolButtons.cable!.rect(),
+        energy: () => ({ x: this.W - 420, y: this.energyText.y - 22, w: 400, h: 70 }),
+        help: () => this.legendBtn.rect(),
+        next: () => this.nextBtn.rect(),
+      },
+      already: {
+        neuron: () => this.board.hidden.some((col) => col.some(Boolean)),
+        valid: () => validateTopology(boardToTopology(this.bp, this.board)).ok,
+      },
+    });
   }
 
   /** Avisa (uma vez) cada ferramenta recém-liberada pelo mapa. */
@@ -209,6 +250,7 @@ export class DesignScene extends BaseScene {
 
   private setTool(tool: Tool): void {
     this.tool = tool;
+    this.events.emit(`tour:tool_${tool}`);
     this.armed = null;
     this.view.highlight = null;
     (Object.keys(this.toolButtons) as Tool[]).forEach((k) => this.toolButtons[k]?.setSelected(k === tool));
@@ -232,7 +274,7 @@ export class DesignScene extends BaseScene {
   }
 
   private onDown(x: number, y: number): void {
-    if (this.popup) return;
+    if (this.popup || tourBlocks(this, x, y)) return;
     const node = this.view.nodeAt(x, y);
     const slot = this.view.slotAt(x, y);
     const isNeuron = !!node && /^h/.test(node);
@@ -343,6 +385,7 @@ export class DesignScene extends BaseScene {
     this.popAt(p.x, p.y, C.violet);
     floatText(this, p.x, p.y - 30, `-${col > 0 ? PRICE.deepNeuron : PRICE.neuron}⚡`, css(C.yellow), 20);
     this.refresh(true);
+    this.events.emit('tour:neuron');
   }
 
   private removeNeuron(id: string): void {
@@ -735,6 +778,7 @@ export class DesignScene extends BaseScene {
 
     if (check.ok) {
       this.setHint('design.hint.ok', 'happy');
+      if (changed) this.events.emit('tour:valid');
       if (changed) {
         this.bot.hop();
         const used = new Set(topo.links.map((l) => l[0]));
@@ -752,6 +796,7 @@ export class DesignScene extends BaseScene {
   private toTrain(): void {
     const topo = boardToTopology(this.bp, this.board);
     analytics.track('design_done', { mission: this.mission.id, hidden: countHidden(topo), links: topo.links.length });
+    this.events.emit('tour:train');
     this.go('Train', { missionId: this.mission.id });
   }
 
