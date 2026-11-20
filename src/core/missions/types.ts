@@ -107,8 +107,12 @@ export interface MissionDef {
    * No catálogo escreve-se só a parte do desenho; `withTraining` soma a do treino.
    */
   budget: number;
-  /** Bateria da missão (visível): paga o desenho e, com o que sobra, o treino. */
+  /** Bateria de TREINO da missão (visível): energia que as épocas e as táticas gastam. */
   energy: number;
+  /** Moedas base do DESIGN: pagam cabos e neurônios. Cada estrela ganha soma mais moedas (`coinBonus`). */
+  coins: number;
+  /** Estrelas totais mínimas para liberar a missão (além de `requires`). */
+  minStars?: number;
   /** Tanque de água de resfriamento do treino (preenchido por `withTraining`). */
   water: number;
   /** Hiperparâmetros iniciais sugeridos. */

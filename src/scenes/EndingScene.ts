@@ -3,8 +3,6 @@
  * Final do jogo — exibida ao vencer o Teste de Turing ("zerar" a simulação).
  */
 import Phaser from 'phaser';
-import { state } from '../app/services';
-import { MISSIONS } from '../core/missions/catalog';
 import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
@@ -33,13 +31,13 @@ export class EndingScene extends BaseScene {
     const bot = new Robot(this, cx, 270, 2).setMood('happy');
     this.time.addEvent({ delay: 900, loop: true, callback: () => bot.hop() });
 
-    ['ending.line1', 'ending.line2', 'ending.line3'].forEach((k, i) => {
-      const line = body(this, cx, 420 + i * 38, t(k), 26, i === 0 ? C.text : C.cyan).setOrigin(0.5).setAlpha(0);
-      this.tweens.add({ targets: line, alpha: 1, y: line.y - 8, duration: 600, delay: 600 + i * 900 });
+    const congrats = body(this, cx, 430, t('ending.congrats'), 32, C.cyan).setOrigin(0.5).setAlpha(0).setWordWrapWidth(this.W - 80).setAlign('center');
+    this.tweens.add({ targets: congrats, alpha: 1, y: congrats.y - 8, duration: 700, delay: 500 });
+    ['ending.spec', 'ending.idea', 'ending.adapt'].forEach((k, i) => {
+      const line = body(this, cx, 500 + i * 30, t(k), 19, C.text).setOrigin(0.5).setAlpha(0).setWordWrapWidth(this.W - 60).setAlign('center');
+      this.tweens.add({ targets: line, alpha: 0.85, duration: 600, delay: 1100 + i * 350 });
     });
-    body(this, cx, 548, `★ ${t('menu.stars', { n: state.totalStars, max: MISSIONS.length * 3 })}`, 28, C.yellow).setOrigin(0.5);
-    body(this, cx, 590, t('ending.credits'), 20, C.dim).setOrigin(0.5);
-    new NeonButton(this, cx, 660, 320, 68, t('ending.back'), () => this.go('Menu'), { color: C.green, size: 20 });
+    new NeonButton(this, cx, 650, 320, 68, t('ending.back'), () => this.go('Menu'), { color: C.green, size: 20 });
 
     // Chuva de confete poligonal.
     const colors = [C.cyan, C.magenta, C.yellow, C.green];

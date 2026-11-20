@@ -13,6 +13,20 @@ function memoryStorage() {
 }
 
 describe('GameState', () => {
+  it('estrelas mínimas travam as 2 últimas fases e rendem moedas no Design', () => {
+    const s = new GameState(memoryStorage());
+    const m = getMission('turing');
+    const base = s.coinCeiling(m);
+    for (const id of ['bercario', 'triagem', 'fronteira', 'corredor', 'xor', 'contagem', 'labirinto', 'tangram', 'captcha', 'origami']) s.recordResult(id, 3, false);
+    expect(s.isUnlocked('quebracabeca')).toBe(true); // 30★ ≥ 20★
+    expect(s.coinCeiling(m)).toBeGreaterThan(base); // estrelas viram moedas
+    s.recordResult('quebracabeca', 1, false);
+    expect(s.isUnlocked('turing')).toBe(true); // 31★ ≥ 25★
+    const poor = new GameState(memoryStorage());
+    poor.recordResult('quebracabeca', 1, false);
+    expect(poor.isUnlocked('turing')).toBe(false); // poucas estrelas
+  });
+
   it('libera missões conforme as dependências e persiste', () => {
     const storage = memoryStorage();
     const s = new GameState(storage);

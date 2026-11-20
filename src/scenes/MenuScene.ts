@@ -293,7 +293,10 @@ export class MenuScene extends BaseScene {
     b.text.setText(
       unlocked
         ? t(`mission.${m.id}.brief`)
-        : t('menu.lockedHint', { list: m.requires.filter((r) => state.stars(r) === 0).map((r) => t(`mission.${r}.title`)).join(' + ') }),
+        : [
+            m.requires.some((r) => state.stars(r) === 0) ? t('menu.lockedHint', { list: m.requires.filter((r) => state.stars(r) === 0).map((r) => t(`mission.${r}.title`)).join(' + ') }) : '',
+            state.totalStars < (m.minStars ?? 0) ? t('menu.lockedStars', { n: m.minStars ?? 0 }) : '',
+          ].filter(Boolean).join('\n'),
     );
     b.concept.setText(`${t('menu.concept')}: ${t(`mission.${m.id}.concept`)}`);
     b.stars.setStars(state.stars(m.id));

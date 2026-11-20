@@ -4,7 +4,7 @@ import { runMission } from './missions/runMission';
 import { MissionDef, toSamples } from './missions/types';
 import { Trainer } from './nn/Trainer';
 import { Topology, activate, activateDeriv, forward, initParams, energyCost, reconcileParams, validateTopology } from './nn/network';
-import { trainEnergyPerEpoch, waterPerEpoch } from './progression/resources';
+import { coinCeiling, trainEnergyPerEpoch, waterPerEpoch } from './progression/resources';
 import { calculateStars } from './scoring';
 
 /** Treina `t` na missão e diz se venceu (e com que perda). */
@@ -108,21 +108,25 @@ describe('missões', () => {
     it(`${m.id}: a solução de referência cabe no orçamento e vence com 2★ na maioria das sementes`, () => {
       const ref = m.reference;
       expect(energyCost(ref.topology, m.extraInputs)).toBeLessThanOrEqual(m.budget);
-      // A referência pressupõe os upgrades de `needs` (bateria ×1.3, resfriador ×1.5).
+      // A referência pressupõe os upgrades de `needs` (bateria ×1.3, chip ×0.7 de gasto, resfriador ×1.5).
       const needs = ref.needs ?? [];
       const eMul = needs.includes('battery') ? 1.3 : 1;
+      const chip = needs.includes('chip') ? 0.7 : 1;
       const wMul = needs.includes('cooler') ? 1.5 : 1;
-      expect(m.energy * eMul).toBeGreaterThan(m.budget);
-      // Treinar a referência cabe no limiar (rede + treino) e no tanque (com os upgrades).
       const hy = { ...m.defaults, ...ref.hyper };
       const cost = energyCost(ref.topology, m.extraInputs);
       const train = hy.epochs * trainEnergyPerEpoch(cost);
       const water = hy.epochs * waterPerEpoch(cost, hy.learningRate);
-      expect(cost + train).toBeLessThanOrEqual(m.budget);
-      expect(cost + train).toBeLessThanOrEqual(m.energy * eMul);
+      // Moedas do Design: a rede de referência cabe com as estrelas que o jogador tem ao chegar (mín. 2★ por fase anterior).
+      const idx = MISSIONS.indexOf(m);
+      const stars = Math.max(m.minStars ?? 0, 2 * idx);
+      expect(cost).toBeLessThanOrEqual(coinCeiling(m.coins, stars));
+      // O treino da referência cabe no limiar de eficiência, na bateria e no tanque (com os upgrades).
+      expect(cost + train * chip).toBeLessThanOrEqual(m.budget);
+      expect(train * chip).toBeLessThanOrEqual(m.energy * eMul);
       expect(water).toBeLessThanOrEqual(m.water * wMul);
-      // Sem os upgrades, a referência NÃO cabe (energia ou água).
-      if (needs.length) expect(cost + train > m.energy || water > m.water).toBe(true);
+      // Sem os upgrades, o treino da referência NÃO cabe (energia ou água).
+      if (needs.length) expect(train > m.energy || water > m.water).toBe(true);
       // Nenhum cabo da referência liga sensor direto em ação.
       for (const [a, b] of ref.topology.links) expect(m.inputs.concat(m.extraInputs ?? []).includes(a) && m.outputs.includes(b)).toBe(false);
       let good = 0;

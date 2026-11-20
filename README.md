@@ -41,15 +41,21 @@ soma mais uma (até 3). As referências das últimas missões são redes profund
 ## Regras de projeto
 
 - **Sensor não se liga direto em ação**: todo sinal passa por pelo menos um neurônio.
-- **Energia**: cada missão tem uma bateria que paga a REDE (cabo 1⚡, neurônio 2⚡, neurônio em
-  camada funda 3⚡, sensor derivado +1⚡) e o TREINO (cada época gasta energia; redes maiores
-  gastam mais; táticas compradas também custam). O que a rede não usa vira reserva de treino.
-- **Água de resfriamento**: cada época gasta água (taxa de aprendizado alta esquenta mais). Se a
-  água acaba, a rede **superaquece** e todo o treino é perdido — a água volta, a energia não.
-  Bateria e tanque só recarregam quando a rede muda no Design (poda e trava não recarregam).
+- **Moedas ($) — Design**: o DESIGN gasta moedas (cabo 1$, neurônio 2$, neurônio em camada funda 3$,
+  sensor derivado +1$). Cada missão dá umas poucas moedas e **cada estrela ganha rende mais**
+  (`COINS_PER_STAR`): avançar nas fases dá dinheiro para montar redes maiores.
+- **Energia e água — Treino**: o TREINO gasta ENERGIA da bateria (cada época; redes maiores gastam
+  mais; táticas compradas também custam) e ÁGUA de resfriamento (taxa de aprendizado alta esquenta
+  mais). Se a água acaba, a rede **superaquece** e todo o treino é perdido — a água volta, a energia
+  não. É preciso balancear épocas, taxa e tamanho da rede. Bateria e tanque só recarregam quando a
+  rede muda no Design (poda e trava não recarregam).
 - **Recursos apertados**: bateria e tanque são só um pouco maiores que o necessário para a solução
-  certa. Nas fases 6–9 falta folga sem um upgrade (bateria ou resfriador); nas fases 10 e 11 faltam
-  os dois — sem upgrades, só dá para treinar poucas épocas, e a rede não aprende a tempo.
+  certa. Nas fases 6–8 falta folga sem um upgrade (bateria ou resfriador); nas fases 10, 11 e 12 faltam
+  bateria, chip **e** resfriador. As fases 11 e 12 também pedem 20★ e 25★ no total.
+- **Loja**: um painel "seus recursos" mostra o efeito dos upgrades (cabo, bateria, chip, água) e cada
+  carta indica a área que afeta (DESIGN $ ou TREINO ⚡).
+- **Dicas após 3 derrotas**: perder 3 vezes (simulação perdida ou rede superaquecida) abre um painel
+  com dicas de deep/machine learning (`ui/lossHints.ts`).
 - **Treino obrigatório**: só dá para simular depois de treinar.
 - **Estrelas**: vitória, qualidade do aprendizado (perda de validação) e eficiência energética
   TOTAL (rede + treino). Os limiares ficam em `core/missions/catalog.ts` e **não aparecem no

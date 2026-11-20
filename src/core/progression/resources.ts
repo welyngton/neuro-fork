@@ -28,3 +28,11 @@ export function waterPerEpoch(designCost: number, lr: number): number {
 export function temperature(level: number): number {
   return Math.round(28 + (1 - Math.max(0, Math.min(1, level))) * 72);
 }
+
+/** Moedas de Design que cada estrela ganha rende (avançar nas fases dá mais dinheiro). */
+export const COINS_PER_STAR = 0.6;
+
+/** Teto de moedas do Design: as da missão mais o bônus das estrelas ganhas. */
+export function coinCeiling(missionCoins: number, totalStars: number): number {
+  return missionCoins + Math.floor(totalStars * COINS_PER_STAR);
+}

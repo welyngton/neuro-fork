@@ -302,30 +302,34 @@ for (const p of [0, 1]) {
 
 /**
  * Folga de recursos por missão, relativa à solução de referência (treinada
- * pelas épocas dela): `e` multiplica a energia total dela (desenho + treino) e
- * `w` a água que ela gasta. Abaixo de 1, o jogador precisa do upgrade
- * correspondente (bateria, resfriador…) — é o que deixa as fases do meio
- * "intermediárias" e as finais difíceis sem upgrades.
+ * pelas épocas dela):
+ *  - `e` multiplica a energia de TREINO dela (bateria);
+ *  - `w` multiplica a água que ela gasta (tanque);
+ *  - `c` multiplica o custo da rede dela (moedas do Design).
+ * Abaixo de 1, o jogador precisa do upgrade correspondente (bateria ×1.3, chip
+ * ×0.7 de gasto, resfriador ×1.5) — é o que deixa o meio do mapa "intermediário"
+ * e o final difícil sem comprar nada na loja.
  */
-const TUNE: Record<string, { e: number; w: number }> = {
-  contagem: { e: 1.4, w: 0.8 }, // resfriador
-  labirinto: { e: 0.86, w: 1.6 }, // bateria
-  tangram: { e: 1.4, w: 0.8 }, // resfriador
-  captcha: { e: 1.4, w: 0.9 }, // resfriador
-  origami: { e: 0.85, w: 0.9 }, // bateria + resfriador
-  quebracabeca: { e: 0.85, w: 0.9 }, // bateria + resfriador
-  turing: { e: 1.15, w: 1.1 },
+const TUNE: Record<string, { e: number; w: number; c: number }> = {
+  contagem: { e: 1.8, w: 0.8, c: 1.1 }, // resfriador
+  labirinto: { e: 0.8, w: 1.6, c: 1.1 }, // bateria
+  tangram: { e: 1.8, w: 0.8, c: 1.1 }, // resfriador
+  captcha: { e: 2, w: 1.4, c: 1.1 }, // folgado: 100 épocas de largada
+  origami: { e: 0.6, w: 0.9, c: 0.78 }, // bateria + chip + resfriador
+  quebracabeca: { e: 0.6, w: 0.9, c: 0.75 }, // bateria + chip + resfriador
+  turing: { e: 0.6, w: 0.7, c: 0.72 }, // bateria + chip + resfriador
 };
-const TUNE_DEFAULT = { e: 2, w: 1.7 };
+const TUNE_DEFAULT = { e: 3, w: 1.7, c: 1.5 };
 
 /**
  * Acrescenta o custo do TREINO ao balanceamento de uma missão, a partir da
  * solução de referência treinada pelas épocas dela:
  *  - limiar oculto (3ª estrela) += 120% da energia de treino da referência;
- *  - bateria visível          = energia total da referência × `e` (ver TUNE);
- *  - tanque de água           = água que a referência gasta × `w`.
+ *  - bateria de treino         = energia de treino da referência × `e`;
+ *  - moedas do design          = custo da rede de referência × `c`;
+ *  - tanque de água            = água que a referência gasta × `w`.
  */
-function withTraining(m: Omit<MissionDef, 'water'>): MissionDef {
+function withTraining(m: Omit<MissionDef, 'water' | 'coins'>): MissionDef {
   const cost = energyCost(m.reference.topology, m.extraInputs);
   const hyper = { ...m.defaults, ...m.reference.hyper };
   const trainE = hyper.epochs * trainEnergyPerEpoch(cost);
@@ -334,13 +338,14 @@ function withTraining(m: Omit<MissionDef, 'water'>): MissionDef {
   return {
     ...m,
     budget: m.budget + Math.ceil(trainE * 1.2),
-    energy: Math.ceil((cost + trainE) * k.e),
+    energy: Math.max(4, Math.ceil(trainE * k.e)),
+    coins: Math.max(4, Math.ceil(cost * k.c)),
     water: Math.ceil((water * k.w) / 10) * 10,
   };
 }
 
 /** Todas as missões, em ordem de progressão. */
-export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
+export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water' | 'coins'>[]>[
   {
     id: 'bercario',
     pos: { x: 0.05, y: 0.8 },
@@ -515,10 +520,10 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     targetLoss: 0.05,
     budget: 8,
     energy: 22,
-    defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
+    defaults: { learningRate: 0.1, epochs: 100, activation: 'tanh' },
     train: captchaTrain,
     // 3 estrelas exigem deixar o sensor "ruido" sem cabo.
-    reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']), hyper: { epochs: 100 }, needs: ['cooler'] },
+    reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']), },
     minHidden: 2,
     cases: buildCaptcha(),
   },
@@ -538,7 +543,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     train: animalTrain.points,
     validation: animalVal.points,
     // 1ª camada: asas, pescoço e patas; 2ª: quem tem asas desempata pelo pescoço, quem não tem, pelas patas. A cor do papel não importa.
-    reference: { topology: denseFrom(ANIMAL_IN, ['asas', 'pescoco', 'patas'], [3, 2], ANIMALS), hyper: { epochs: 100 }, needs: ['battery', 'cooler'] },
+    reference: { topology: denseFrom(ANIMAL_IN, ['asas', 'pescoco', 'patas'], [3, 2], ANIMALS), hyper: { epochs: 100 }, needs: ['battery', 'chip', 'cooler'] },
     minHidden: 2,
     cases: origamiCases,
     passRatio: 0.9,
@@ -548,6 +553,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     id: 'quebracabeca',
     pos: { x: 0.9, y: 0.78 },
     requires: ['origami', 'captcha'],
+    minStars: 20,
     skin: 'puzzle',
     inputs: PUZZLE_IN,
     outputs: ['encaixar'],
@@ -558,7 +564,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.3, epochs: 200, activation: 'tanh' },
     train: puzzleTrain,
     // 1ª camada: lê as contagens ("é canto?", "tem aba?", "só uma aba?"); 2ª: junta tudo. O giro e os recortes não importam.
-    reference: { topology: denseFrom(PUZZLE_IN, ['abas', 'retas'], [3, 4], ['encaixar']), hyper: { epochs: 100 }, needs: ['battery', 'cooler'] },
+    reference: { topology: denseFrom(PUZZLE_IN, ['abas', 'retas'], [3, 4], ['encaixar']), hyper: { epochs: 100 }, needs: ['battery', 'chip', 'cooler'] },
     minHidden: 2,
     cases: puzzleCases,
   },
@@ -567,6 +573,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     id: 'turing',
     pos: { x: 0.95, y: 0.16 },
     requires: ['quebracabeca'],
+    minStars: 25,
     skin: 'turing',
     inputs: TURING_IN,
     outputs: TURING_OUT,
@@ -577,7 +584,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: turingTrain,
     // Duas camadas de 3: a 1ª lê o tom, a 2ª decide. "pergunta" não muda a resposta.
-    reference: { topology: denseFrom(TURING_IN, ['saudacao', 'tom'], [3, 3], TURING_OUT) },
+    reference: { topology: denseFrom(TURING_IN, ['saudacao', 'tom'], [3, 3], TURING_OUT), needs: ['battery', 'chip', 'cooler'] },
     minHidden: 3,
     cases: turingCases,
   },

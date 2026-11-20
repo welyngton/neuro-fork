@@ -4,6 +4,7 @@
  * Design e de Treino. O catálogo vem de `core/progression/upgrades.ts`.
  */
 import { analytics, audio, state } from '../app/services';
+import { COINS_PER_STAR } from '../core/progression/resources';
 import { UPGRADES } from '../core/progression/upgrades';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
@@ -22,7 +23,20 @@ export class ShopScene extends BaseScene {
   }
 
   protected build(): void {
-    const top = this.addPageHeader('shop.title', C.yellow);
+    const head = this.addPageHeader('shop.title', C.yellow);
+    // Painel "seus recursos": mostra o efeito dos upgrades comprados em cada recurso do jogo.
+    const caps = state.caps;
+    const panel = { x: 20, y: head + 8, w: this.W - 40, h: 58 };
+    addPanel(this, panel, C.cyan, 0.7);
+    title(this, panel.x + 16, panel.y + 6, t('shop.res.title'), 13, C.cyan);
+    const cw3 = (panel.w - 32) / 3;
+    const bonus = Math.floor(state.totalStars * COINS_PER_STAR);
+    [
+      [t('shop.res.coins', { n: bonus, c: caps.cablePrice }), caps.cablePrice < 1 ? C.green : C.yellow],
+      [t('shop.res.energy', { e: caps.energyMul.toFixed(1), p: caps.trainEnergyMul.toFixed(1) }), caps.energyMul > 1 || caps.trainEnergyMul < 1 ? C.green : C.magenta],
+      [t('shop.res.water', { w: caps.waterMul.toFixed(1) }), caps.waterMul > 1 ? C.green : C.cyan],
+    ].forEach(([txt, color], i) => body(this, panel.x + 16 + i * cw3, panel.y + 28, txt as string, 15, color as number).setWordWrapWidth(cw3 - 12));
+    const top = head + 70;
     const cols = UPGRADES.length > 9 ? 4 : 3;
     const gap = 14;
     const cw = (this.W - 40 - gap * (cols - 1)) / cols;
@@ -38,7 +52,7 @@ export class ShopScene extends BaseScene {
       addPanel(this, { x, y, w: cw, h: ch }, owned ? C.green : color, owned ? 0.6 : 0.9);
       title(this, x + 16, y + 12, t(`upg.${up.id}.t`), 16, owned ? C.green : color).setWordWrapWidth(cw - 110);
       addChip(this, 0, y + 22, t(`shop.area.${up.area}`), color, false).setOrigin(1, 0.5).setX(x + cw - 10).setScale(0.8);
-      body(this, x + 16, y + 40, t(`upg.${up.id}.d`), 17, C.text).setWordWrapWidth(cw - 32);
+      body(this, x + 16, y + 38, t(`upg.${up.id}.d`), 16, C.text).setWordWrapWidth(cw - 32);
       const label = owned ? `✓ ${t('shop.owned')}` : missing > 0 ? t('shop.poor', { n: missing }) : t('shop.buy', { n: up.cost });
       const btn = new NeonButton(
         this,

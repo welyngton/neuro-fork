@@ -14,6 +14,7 @@ import { Hyper, Params } from '../core/nn/network';
 import { ACHIEVEMENTS, achievementLevels } from '../core/progression/achievements';
 import { AvatarLook } from '../core/progression/avatars';
 import { Caps, UPGRADES, capsFor } from '../core/progression/upgrades';
+import { coinCeiling } from '../core/progression/resources';
 import { Stars } from '../core/scoring';
 import { Locale } from '../services/i18n';
 
@@ -209,7 +210,13 @@ export class GameState {
 
   /** Uma missão está liberada quando todas as suas `requires` têm ao menos 1 estrela. */
   isUnlocked(id: string): boolean {
-    return getMission(id).requires.every((r) => this.stars(r) > 0);
+    const m = getMission(id);
+    return m.requires.every((r) => this.stars(r) > 0) && this.totalStars >= (m.minStars ?? 0);
+  }
+
+  /** Moedas do Design: as da missão mais o bônus das estrelas ganhas (avançar rende dinheiro). */
+  coinCeiling(m: { coins: number }): number {
+    return coinCeiling(m.coins, this.totalStars);
   }
 
   /* ------------------------------------------------------------------ loja e upgrades */

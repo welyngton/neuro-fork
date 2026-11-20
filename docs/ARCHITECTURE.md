@@ -67,10 +67,12 @@ Consequência: bug de regra se conserta e se testa em `core/`; bug visual, em `s
 
 ## Dificuldade — o contrato de cada missão
 
-Cada `MissionDef` declara `energy` (bateria visível), `budget` (limiar oculto da 3ª estrela),
-`reference` (uma solução dentro do limiar) e `minHidden`. No catálogo esses números cobrem só a
-rede; `withTraining` acrescenta o custo de treinar a referência e calcula o tanque `water`, com as
-fórmulas de `core/progression/resources.ts`. A regra de fiação
+Cada `MissionDef` declara `coins` (moedas base do Design; `coinCeiling` soma o bônus das estrelas),
+`energy` (bateria de TREINO), `water` (tanque), `budget` (limiar oculto da 3ª estrela), `minStars`
+(estrelas totais para liberar), `reference` (uma solução dentro do limiar, com os upgrades de `needs`)
+e `minHidden`. No catálogo só `budget` cobre a rede; `withTraining` calcula `coins`, `energy` e
+`water` a partir da referência e da tabela `TUNE` (folga por missão), com as fórmulas de
+`core/progression/resources.ts`. A regra de fiação
 (`isAllowedLink` em `board.ts`) proíbe sensor → ação. A energia é `energyCost` (`network.ts`).
 `core.test.ts` garante que: a referência vence com 2★ na maioria das sementes e nunca liga sensor
 em ação; redes zeradas não vencem; com menos neurônios que `minHidden` não vence; nas missões com

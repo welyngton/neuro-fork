@@ -39,6 +39,8 @@ import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
 import { NetworkView } from '../ui/NetworkView';
+import { registerLoss } from '../core/progression/losses';
+import { showLossHints } from '../ui/lossHints';
 import { celebrate, showToast, tip } from '../ui/Toast';
 import { burst, floatText, glow } from '../ui/fx';
 import { C, Rect, body, chamfer, css, offset, title } from '../ui/theme';
@@ -121,7 +123,7 @@ export class TrainScene extends BaseScene {
 
   /** Energia que ainda dá para gastar em treino. */
   private get reserve(): number {
-    return Math.max(0, this.ceiling - this.designCost - this.spent);
+    return Math.max(0, this.ceiling - this.spent);
   }
 
   /** A reserva não paga nem uma época: treinar (ou embaralhar para treinar de novo) não adianta mais. */
@@ -239,10 +241,10 @@ export class TrainScene extends BaseScene {
     const sw = half / segs;
     for (let i = 0; i < segs; i++) {
       const v = ((i + 0.5) / segs) * this.ceiling;
-      const color = v <= this.designCost ? C.violet : v <= this.designCost + this.spent ? C.magenta : C.yellow;
+      const color = v <= this.spent ? C.magenta : C.yellow;
       g.fillStyle(color, color === C.yellow ? 0.95 : 0.45).fillRect(r.x + 18 + i * sw, y, sw - 2, 12);
     }
-    this.hud.energy.setText(t('train.hud.energy', { r: Math.floor(this.reserve), d: this.designCost, t: Math.ceil(this.spent) })).setColor(css(this.reserve < 2 ? C.red : C.yellow));
+    this.hud.energy.setText(t('train.hud.energy', { r: Math.floor(this.reserve), b: this.ceiling, t: Math.ceil(this.spent) })).setColor(css(this.reserve < 2 ? C.red : C.yellow));
 
     // Tanque: nível de água, do azul ao vermelho conforme esvazia (pisca abaixo de 25%).
     const level = Phaser.Math.Clamp(this.water / this.tank, 0, 1);
@@ -490,6 +492,7 @@ export class TrainScene extends BaseScene {
     this.running = false;
     this.shopAt = this.fateAt = -1;
     state.bump('overheats');
+    if (registerLoss()) this.time.delayedCall(1800, () => showLossHints(this, 3000));
     audio.sfx('bomb');
     audio.sfx('lose');
     this.cameras.main.shake(700, 0.02);

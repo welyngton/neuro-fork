@@ -34,7 +34,7 @@ export interface MusicTheme {
 const MINOR = [0, 2, 3, 5, 7, 8, 10];
 const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
 const DORIAN = [0, 2, 3, 5, 7, 9, 10];
-const LYDIAN = [0, 2, 4, 6, 7, 9, 11];
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const _ = null;
 
 export const MUSIC_THEMES: Record<ThemeId, MusicTheme> = {
@@ -108,18 +108,18 @@ export const MUSIC_THEMES: Record<ThemeId, MusicTheme> = {
     hat: 'x.x.x.x.x.x.x.x.',
     pad: true,
   },
-  /** Final: abre para o lídio — a única trilha "clara" do jogo. */
+  /** Final: fanfarra de vitória — maior, rápida, baixo em colcheias e arpejo brilhante. */
   ending: {
-    bpm: 104,
-    root: 36,
-    scale: LYDIAN,
-    chords: [0, 4, 5, 3],
-    bass: [0, _, 0, _, 4, _, 0, _, 0, _, 0, _, 7, _, 4, _],
-    arp: [0, 2, 4, 7, 9, 7, 4, 2, 0, 2, 4, 7, 11, 9, 7, 4],
-    arpWave: 'triangle',
-    kick: 'x...x...x...x...',
-    snare: '....x.......x...',
-    hat: 'x.x.x.x.x.x.x.x.',
+    bpm: 132,
+    root: 38,
+    scale: MAJOR,
+    chords: [0, 3, 4, 0, 5, 3, 4, 4],
+    bass: [0, _, 0, 0, 0, _, 0, 0, 4, _, 4, 4, 4, _, 7, 4],
+    arp: [0, 4, 7, 11, 7, 4, 7, 11, 9, 11, 14, 11, 9, 7, 9, 11],
+    arpWave: 'sawtooth',
+    kick: 'x...x...x...x.x.',
+    snare: '....x.......x.xx',
+    hat: 'x.xxx.xxx.xxx.xx',
     pad: true,
   },
 };

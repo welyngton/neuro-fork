@@ -129,7 +129,7 @@ export class DesignScene extends BaseScene {
     this.bp = state.blueprint(m.id);
     this.board = state.design(m.id).board;
     state.assisted = !!state.design(m.id).assisted;
-    this.ceiling = Math.round(m.energy * state.caps.energyMul);
+    this.ceiling = state.coinCeiling(m);
     this.undoStack = [];
     this.dragFrom = this.armed = null;
     this.popup = null;
@@ -367,7 +367,7 @@ export class DesignScene extends BaseScene {
     if (this.cost() <= this.ceiling) return true;
     const prev = this.undoStack.pop();
     if (prev) this.replaceBoard(JSON.parse(prev) as Board);
-    this.fail('design.hint.noEnergy');
+    this.fail('design.hint.noCoins');
     this.cameras.main.shake(120, 0.005);
     this.flashEnergy();
     return false;
@@ -736,12 +736,11 @@ export class DesignScene extends BaseScene {
     this.tweens.add({ targets: this.energyText, scale: 1.25, duration: 90, yoyo: true, repeat: 1 });
   }
 
-  /** Desenha a bateria: violeta = rede, magenta = treino já gasto, amarelo = sobra para treinar. */
+  /** Desenha a carteira de moedas: violeta = gasto na rede, amarelo = o que ainda dá para gastar. */
   private redrawEnergy(): void {
     const cost = this.cost();
-    const spent = Math.ceil(state.design(this.mission.id).trainSpent ?? 0);
-    const free = Math.max(0, this.ceiling - cost - spent);
-    this.energyText.setText(t('design.energy', { a: cost, t: spent, b: this.ceiling })).setColor(css(free < this.ceiling * 0.25 ? C.orange : C.yellow));
+    const free = Math.max(0, this.ceiling - cost);
+    this.energyText.setText(t('design.energy', { a: cost, b: this.ceiling })).setColor(css(free < this.ceiling * 0.2 ? C.orange : C.yellow));
     const w = 230;
     const x = this.W - 24 - w;
     const y = this.energyText.y + 14;
@@ -749,7 +748,7 @@ export class DesignScene extends BaseScene {
     const g = this.energyBar.clear();
     for (let i = 0; i < segs; i++) {
       const v = ((i + 0.5) / segs) * this.ceiling;
-      const color = v <= cost ? C.violet : v <= cost + spent ? C.magenta : C.yellow;
+      const color = v <= cost ? C.violet : C.yellow;
       g.fillStyle(color, color === C.yellow ? 0.9 : 0.6).fillRect(x + (i * w) / segs + 1, y, w / segs - 3, 10);
     }
   }

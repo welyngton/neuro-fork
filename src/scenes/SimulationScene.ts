@@ -22,6 +22,8 @@ import { Stars, calculateStars } from '../core/scoring';
 import { t } from '../services/i18n';
 import { GLOSSARY, GlossaryEntry, entryText } from '../services/i18n/glossary';
 import { NeonButton } from '../ui/NeonButton';
+import { registerLoss, registerWin } from '../core/progression/losses';
+import { showLossHints } from '../ui/lossHints';
 import { celebrate, tip } from '../ui/Toast';
 import { burst } from '../ui/fx';
 import { runTour, touring } from '../ui/Tour';
@@ -161,6 +163,8 @@ export class SimulationScene extends BaseScene {
     else this.cameras.main.shake(300, 0.01);
     this.showResult(win, stars, isFinal, netCost);
     celebrate(this);
+    if (win) registerWin();
+    else if (registerLoss()) this.time.delayedCall(900, () => showLossHints(this, 2500));
   }
 
   /** Atualiza os contadores que alimentam as conquistas. */
