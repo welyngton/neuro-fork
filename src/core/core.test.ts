@@ -108,12 +108,21 @@ describe('missões', () => {
     it(`${m.id}: a solução de referência cabe no orçamento e vence com 2★ na maioria das sementes`, () => {
       const ref = m.reference;
       expect(energyCost(ref.topology, m.extraInputs)).toBeLessThanOrEqual(m.budget);
-      expect(m.energy).toBeGreaterThan(m.budget);
-      // Treinar a referência cabe no limiar (rede + treino) e usa no máximo ~half do tanque.
+      // A referência pressupõe os upgrades de `needs` (bateria ×1.3, resfriador ×1.5).
+      const needs = ref.needs ?? [];
+      const eMul = needs.includes('battery') ? 1.3 : 1;
+      const wMul = needs.includes('cooler') ? 1.5 : 1;
+      expect(m.energy * eMul).toBeGreaterThan(m.budget);
+      // Treinar a referência cabe no limiar (rede + treino) e no tanque (com os upgrades).
       const hy = { ...m.defaults, ...ref.hyper };
       const cost = energyCost(ref.topology, m.extraInputs);
-      expect(cost + hy.epochs * trainEnergyPerEpoch(cost)).toBeLessThanOrEqual(m.budget);
-      expect(hy.epochs * waterPerEpoch(cost, hy.learningRate)).toBeLessThanOrEqual(m.water * 0.5);
+      const train = hy.epochs * trainEnergyPerEpoch(cost);
+      const water = hy.epochs * waterPerEpoch(cost, hy.learningRate);
+      expect(cost + train).toBeLessThanOrEqual(m.budget);
+      expect(cost + train).toBeLessThanOrEqual(m.energy * eMul);
+      expect(water).toBeLessThanOrEqual(m.water * wMul);
+      // Sem os upgrades, a referência NÃO cabe (energia ou água).
+      if (needs.length) expect(cost + train > m.energy || water > m.water).toBe(true);
       // Nenhum cabo da referência liga sensor direto em ação.
       for (const [a, b] of ref.topology.links) expect(m.inputs.concat(m.extraInputs ?? []).includes(a) && m.outputs.includes(b)).toBe(false);
       let good = 0;

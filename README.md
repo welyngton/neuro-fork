@@ -47,6 +47,9 @@ soma mais uma (até 3). As referências das últimas missões são redes profund
 - **Água de resfriamento**: cada época gasta água (taxa de aprendizado alta esquenta mais). Se a
   água acaba, a rede **superaquece** e todo o treino é perdido — a água volta, a energia não.
   Bateria e tanque só recarregam quando a rede muda no Design (poda e trava não recarregam).
+- **Recursos apertados**: bateria e tanque são só um pouco maiores que o necessário para a solução
+  certa. Nas fases 6–9 falta folga sem um upgrade (bateria ou resfriador); nas fases 10 e 11 faltam
+  os dois — sem upgrades, só dá para treinar poucas épocas, e a rede não aprende a tempo.
 - **Treino obrigatório**: só dá para simular depois de treinar.
 - **Estrelas**: vitória, qualidade do aprendizado (perda de validação) e eficiência energética
   TOTAL (rede + treino). Os limiares ficam em `core/missions/catalog.ts` e **não aparecem no

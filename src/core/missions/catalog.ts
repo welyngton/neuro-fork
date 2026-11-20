@@ -301,22 +301,41 @@ for (const p of [0, 1]) {
 }
 
 /**
+ * Folga de recursos por missão, relativa à solução de referência (treinada
+ * pelas épocas dela): `e` multiplica a energia total dela (desenho + treino) e
+ * `w` a água que ela gasta. Abaixo de 1, o jogador precisa do upgrade
+ * correspondente (bateria, resfriador…) — é o que deixa as fases do meio
+ * "intermediárias" e as finais difíceis sem upgrades.
+ */
+const TUNE: Record<string, { e: number; w: number }> = {
+  contagem: { e: 1.4, w: 0.8 }, // resfriador
+  labirinto: { e: 0.86, w: 1.6 }, // bateria
+  tangram: { e: 1.4, w: 0.8 }, // resfriador
+  captcha: { e: 1.4, w: 0.9 }, // resfriador
+  origami: { e: 0.85, w: 0.9 }, // bateria + resfriador
+  quebracabeca: { e: 0.85, w: 0.9 }, // bateria + resfriador
+  turing: { e: 1.15, w: 1.1 },
+};
+const TUNE_DEFAULT = { e: 2, w: 1.7 };
+
+/**
  * Acrescenta o custo do TREINO ao balanceamento de uma missão, a partir da
  * solução de referência treinada pelas épocas dela:
  *  - limiar oculto (3ª estrela) += 120% da energia de treino da referência;
- *  - bateria visível          += 350% dela (folga para experimentar e errar);
- *  - tanque de água           = 250% da água que a referência gasta.
+ *  - bateria visível          = energia total da referência × `e` (ver TUNE);
+ *  - tanque de água           = água que a referência gasta × `w`.
  */
 function withTraining(m: Omit<MissionDef, 'water'>): MissionDef {
   const cost = energyCost(m.reference.topology, m.extraInputs);
   const hyper = { ...m.defaults, ...m.reference.hyper };
   const trainE = hyper.epochs * trainEnergyPerEpoch(cost);
   const water = hyper.epochs * waterPerEpoch(cost, hyper.learningRate);
+  const k = TUNE[m.id] ?? TUNE_DEFAULT;
   return {
     ...m,
     budget: m.budget + Math.ceil(trainE * 1.2),
-    energy: m.energy + Math.ceil(trainE * 3.5) + 2,
-    water: Math.ceil((water * 2.5) / 10) * 10,
+    energy: Math.ceil((cost + trainE) * k.e),
+    water: Math.ceil((water * k.w) / 10) * 10,
   };
 }
 
@@ -430,7 +449,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: contagemTrain,
     // Só o número de cantos importa: tamanho e giro ficam sem cabo (3ª estrela).
-    reference: { topology: denseFrom(COUNT_IN, ['cantos'], [2], COUNT_OUT) },
+    reference: { topology: denseFrom(COUNT_IN, ['cantos'], [2], COUNT_OUT), needs: ['cooler'] },
     minHidden: 2,
     cases: buildCounting(),
   },
@@ -448,7 +467,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     energy: 44,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: beaconTrain,
-    reference: { topology: fullyConnected(BEACON_IN, [2], BEACON_OUT) },
+    reference: { topology: fullyConnected(BEACON_IN, [2], BEACON_OUT), needs: ['battery'] },
     minHidden: 2,
     maze: {
       grid: [
@@ -480,7 +499,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: tangramTrain,
     // A cor da peça não importa: deixá-la sem cabo é parte da 3ª estrela.
-    reference: { topology: denseFrom(TANGRAM_IN, ['cantos', 'grande', 'inclinado'], [3], TANGRAM_OUT) },
+    reference: { topology: denseFrom(TANGRAM_IN, ['cantos', 'grande', 'inclinado'], [3], TANGRAM_OUT), needs: ['cooler'] },
     minHidden: 2,
     cases: tangramCases,
   },
@@ -499,7 +518,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: captchaTrain,
     // 3 estrelas exigem deixar o sensor "ruido" sem cabo.
-    reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']) },
+    reference: { topology: denseFrom(['cantos', 'ruido'], ['cantos'], [2], ['marcar']), hyper: { epochs: 100 }, needs: ['cooler'] },
     minHidden: 2,
     cases: buildCaptcha(),
   },
@@ -519,7 +538,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     train: animalTrain.points,
     validation: animalVal.points,
     // 1ª camada: asas, pescoço e patas; 2ª: quem tem asas desempata pelo pescoço, quem não tem, pelas patas. A cor do papel não importa.
-    reference: { topology: denseFrom(ANIMAL_IN, ['asas', 'pescoco', 'patas'], [3, 2], ANIMALS) },
+    reference: { topology: denseFrom(ANIMAL_IN, ['asas', 'pescoco', 'patas'], [3, 2], ANIMALS), hyper: { epochs: 100 }, needs: ['battery', 'cooler'] },
     minHidden: 2,
     cases: origamiCases,
     passRatio: 0.9,
@@ -539,7 +558,7 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water'>[]>[
     defaults: { learningRate: 0.3, epochs: 200, activation: 'tanh' },
     train: puzzleTrain,
     // 1ª camada: lê as contagens ("é canto?", "tem aba?", "só uma aba?"); 2ª: junta tudo. O giro e os recortes não importam.
-    reference: { topology: denseFrom(PUZZLE_IN, ['abas', 'retas'], [3, 4], ['encaixar']) },
+    reference: { topology: denseFrom(PUZZLE_IN, ['abas', 'retas'], [3, 4], ['encaixar']), hyper: { epochs: 100 }, needs: ['battery', 'cooler'] },
     minHidden: 2,
     cases: puzzleCases,
   },

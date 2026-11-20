@@ -67,10 +67,23 @@ export const puzzleSkin: SkinFactory = ({ scene, rect, result, hud }) => {
     const arrow = scene.add.triangle(rect.x + 30, beltY + 12, 0, 0, 14, 8, 0, 16, C.dim).setAlpha(0.8);
     scene.tweens.add({ targets: arrow, x: stationX + 40, duration: 2000, repeat: -1, delay: i * 330 });
   }
-  const bin = { x: stationX + 40, y: rect.y + rect.h - 52 };
-  const binG = scene.add.graphics({ x: bin.x, y: bin.y });
-  binG.fillStyle(C.panel, 0.95).fillPoints(chamfer(190, 62, 14), true).lineStyle(3, C.red).strokePoints(chamfer(190, 62, 14), true, true);
-  body(scene, bin.x, bin.y, t('puzzle.trash'), 20, C.red).setOrigin(0.5);
+  // Balde de descarte: interior escuro atrás da peça, corpo e aro à frente (a peça "cai" dentro).
+  const bin = { x: stationX + 40, y: rect.y + rect.h - 64 };
+  const topW = 132, botW = 100, hgt = 74, top = -34;
+  const back = scene.add.graphics({ x: bin.x, y: bin.y });
+  back.fillStyle(0x07050f).fillEllipse(0, top, topW, 26);
+  const front = scene.add.graphics({ x: bin.x, y: bin.y }).setDepth(6);
+  const bodyPts = [
+    new Phaser.Math.Vector2(-topW / 2, top), new Phaser.Math.Vector2(topW / 2, top),
+    new Phaser.Math.Vector2(botW / 2, top + hgt), new Phaser.Math.Vector2(-botW / 2, top + hgt),
+  ];
+  front.fillStyle(C.panel, 0.98).fillPoints(bodyPts, true).lineStyle(3, C.red).strokePoints(bodyPts, true, true);
+  for (const k of [-0.5, 0, 0.5]) front.lineStyle(2, C.red, 0.35).lineBetween(k * topW * 0.8, top + 14, k * botW * 0.8, top + hgt - 6);
+  front.lineStyle(3, C.red).strokeEllipse(0, top, topW, 26);
+  front.lineStyle(3, C.red, 0.8).beginPath().arc(0, top + 2, topW / 2 + 8, Math.PI * 1.08, Math.PI * 1.92).strokePath();
+  const lbl = body(scene, bin.x, bin.y + 20, t('puzzle.trash'), 17, C.red).setOrigin(0.5).setDepth(7);
+  void lbl;
+  const binDrop = { x: bin.x, y: bin.y + top + 14 };
 
   const bot = new Robot(scene, stationX, rect.y + rect.h * 0.3, 1);
   const thought = title(scene, stationX, rect.y + rect.h * 0.3 - 108, '', 24, C.yellow).setOrigin(0.5);
@@ -104,7 +117,7 @@ export const puzzleSkin: SkinFactory = ({ scene, rect, result, hud }) => {
 
       const toTrash = () => {
         audio.sfx('whoosh');
-        return scene.tween({ targets: item, x: bin.x, y: bin.y - 10, angle: item.angle + 300, scale: 0.55, duration: 460, ease: 'Quad.in' });
+        return scene.tween({ targets: item, x: binDrop.x, y: binDrop.y, angle: item.angle + 300, scale: 0.4, duration: 480, ease: 'Quad.in' });
       };
 
       if (step.chosen) {
@@ -140,12 +153,12 @@ export const puzzleSkin: SkinFactory = ({ scene, rect, result, hud }) => {
           // Descartou a peça certa.
           audio.sfx('bad');
           bot.setMood('sad').shake();
-          floatText(scene, bin.x, bin.y - 50, 'X', css(C.red));
+          floatText(scene, bin.x, bin.y - 80, 'X', css(C.red));
         } else {
           correct++;
           audio.sfx('good');
           bot.setMood('happy');
-          floatText(scene, bin.x, bin.y - 50, '+1', css(C.green), 24);
+          floatText(scene, bin.x, bin.y - 80, '+1', css(C.green), 24);
         }
       }
       item.destroy();
