@@ -37,11 +37,11 @@ const RECAP_TERMS: Record<string, string[]> = {
   fronteira: ['fronteira', 'validacao', 'ruido'],
   corredor: ['argmax', 'acao', 'atributo'],
   xor: ['xor', 'camada_oculta', 'fronteira'],
-  contagem: ['camada_oculta', 'engenharia', 'atributo'],
+  contagem: ['argmax', 'classificacao', 'atributo'],
   labirinto: ['argmax', 'camada_oculta', 'acao'],
   tangram: ['argmax', 'classificacao', 'atributo'],
   captcha: ['ativacao', 'atributo', 'ruido'],
-  origami: ['ativacao', 'overfitting', 'validacao'],
+  origami: ['argmax', 'camada_oculta', 'validacao'],
   quebracabeca: ['dl', 'camada_oculta', 'xor'],
   turing: ['classificacao', 'turing', 'dl'],
 };

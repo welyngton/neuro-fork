@@ -9,7 +9,7 @@ import { ClassCase } from '../simulation/classification';
 import { MazeConfig } from '../simulation/maze';
 
 /** Skin = "como a simulação é desenhada". Cada valor tem um arquivo em `scenes/skins`. */
-export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing' | 'field' | 'origami';
+export type SkinId = 'sorter' | 'maze' | 'captcha' | 'turing' | 'field' | 'counter' | 'puzzle';
 
 /** Um exemplo rotulado com as leituras por NOME de sensor (inclui sensores derivados). */
 export interface DataPoint {
@@ -17,25 +17,46 @@ export interface DataPoint {
   targets: number[];
 }
 
+/** Formas simples que aparecem nas esteiras. */
+export type BasicShape = 'circle' | 'triangle' | 'square';
+
+/** Animais de origami da missão 10. */
+export type OriAnimal = 'tsuru' | 'sapo' | 'borboleta' | 'peixe';
+
 /** Dados visuais de um item da esteira (skin `sorter`). */
 export interface SorterVisual {
   /**
-   * `chip` = chip de dois LEDs (XOR); `tray` = bandeja com encaixes (Contagem);
-   * `parallelogram` = peça inclinada do Tangram; `puzzle` = peça de quebra-cabeça
-   * diante do vão onde deve encaixar.
+   * Forma simples; `parallelogram` = peça inclinada do Tangram; `pair` = dois
+   * itens lado a lado (Paradoxo dos Gêmeos); `animal` = origami de um bicho.
    */
-  shape: 'circle' | 'triangle' | 'square' | 'chip' | 'tray' | 'parallelogram' | 'puzzle';
+  shape: BasicShape | 'parallelogram' | 'pair' | 'animal';
   big?: boolean;
   /** Cor alternativa (sensor "cor" da Triagem). */
   alt?: boolean;
-  /** Para `chip`: estado dos dois LEDs. */
-  a?: number;
-  b?: number;
-  /** Para `tray`: o que há em cada encaixe (null = vazio). */
-  cells?: (('circle' | 'triangle' | 'square') | null)[];
-  /** Para `puzzle`: bordas da peça e do vão (1 = aba para fora, 0 = recorte). */
-  piece?: [number, number];
-  hole?: [number, number];
+  /** Para `pair`: as duas formas (iguais = gêmeas). */
+  pair?: [BasicShape, BasicShape];
+  /** Para `animal`: qual origami e o quanto está girado (rad). */
+  animal?: OriAnimal;
+  tilt?: number;
+}
+
+/** Figura que passa na esteira da Contagem (skin `counter`). */
+export interface CounterVisual {
+  shape: BasicShape | 'pentagon' | 'hexagon';
+  /** Giro da figura (rad) e tamanho relativo (0..1). */
+  rot: number;
+  size: number;
+}
+
+/**
+ * Peça de quebra-cabeça (skin `puzzle`). `edges` = [cima, direita, baixo, esquerda]
+ * na posição em que a peça se ENCAIXA: 1 = aba, -1 = recorte, 0 = reta. Na esteira
+ * ela chega girada em `rot` (rad).
+ */
+export interface PuzzleVisual {
+  edges: [number, number, number, number];
+  rot: number;
+  fits: boolean;
 }
 
 /** Dados visuais de um quadro do CAPTCHA. */
@@ -50,11 +71,6 @@ export interface CaptchaVisual {
 /** Dados de uma rodada do Teste de Turing: índice das falas em `turing.q{n}` / `turing.a{n}`. */
 export interface TuringVisual {
   n: number;
-}
-
-/** Vinco da folha de origami (skin `origami`): posição ao longo do papel, -1..1. */
-export interface OrigamiVisual {
-  x: number;
 }
 
 /** Ponto do campo 2D (skin `field`), em coordenadas -1..1. */

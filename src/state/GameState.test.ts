@@ -31,6 +31,31 @@ describe('GameState', () => {
     expect(s.totalStars).toBe(0);
   });
 
+  it('descarta UMA vez o desenho salvo das missões reformadas, mantendo as estrelas', () => {
+    const storage = memoryStorage();
+    const old = new GameState(storage);
+    old.recordResult('xor', 2, false);
+    old.saveDesign('xor', { seed: 7 });
+    // Simula um save da versão anterior: sem o marcador da reforma.
+    const raw = JSON.parse(storage.getItem('neurobot.save.v2')!);
+    delete raw.redesign;
+    storage.setItem('neurobot.save.v2', JSON.stringify(raw));
+    const loaded = new GameState(storage);
+    expect(loaded.stars('xor')).toBe(2);
+    expect(loaded.snapshot().missions.xor.design).toBeUndefined();
+    // Desenhos novos feitos depois disso não são descartados no próximo carregamento.
+    loaded.saveDesign('xor', { seed: 9 });
+    expect(new GameState(storage).design('xor').seed).toBe(9);
+    // Um save remoto antigo também não traz o desenho velho de volta.
+    const remote = JSON.parse(JSON.stringify(old.snapshot()));
+    delete remote.redesign;
+    remote.updatedAt = Date.now() + 1000;
+    const g = new GameState(memoryStorage());
+    g.merge(remote);
+    expect(g.snapshot().missions.xor.design).toBeUndefined();
+    expect(g.stars('xor')).toBe(2);
+  });
+
   it('mescla saves remotos ficando com o melhor resultado', () => {
     const a = new GameState(memoryStorage());
     const b = new GameState(memoryStorage());
@@ -98,8 +123,8 @@ describe('board', () => {
     const b2 = emptyBoard(bp);
     b2.hidden[0][0] = true;
     // Direto sensor->ação, de trás para frente e para um encaixe vazio: tudo descartado.
-    b2.links = [['luz_a', 'ativar'], ['ativar', 'luz_a'], ['luz_a', 'h0_1'], ['luz_a', 'h0_0'], ['h0_0', 'ativar']];
-    expect(boardToTopology(bp, b2).links).toEqual([['luz_a', 'h0_0'], ['h0_0', 'ativar']]);
+    b2.links = [['forma_a', 'gemeas'], ['gemeas', 'forma_a'], ['forma_a', 'h0_1'], ['forma_a', 'h0_0'], ['h0_0', 'gemeas']];
+    expect(boardToTopology(bp, b2).links).toEqual([['forma_a', 'h0_0'], ['h0_0', 'gemeas']]);
   });
 
   it('AUTO liga tudo em tudo e os sensores derivados só aparecem com o upgrade', () => {

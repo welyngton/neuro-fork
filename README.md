@@ -26,13 +26,13 @@ MENU (opções + mapa de missões)
 | 2 | Triagem | só quadrado grande vai no buraco B | porta E, seleção de atributos | 1 |
 | 3 | Fronteira | campo 2D: abater invasores | fronteira de decisão, ruído, validação | 1 |
 | 4 | Corredor de Dados | atravessar um corredor sem bater | várias ações (argmax) | 1 |
-| 5 | Paradoxo XOR | ativar o chip com exatamente uma luz | camada oculta com 2 neurônios | 1 |
-| 6 | Contagem | embalar bandejas com exatamente 2 peças | "nem menos, nem mais", atributo derivado | 2 |
+| 5 | Paradoxo dos Gêmeos | duas formas iguais vão para um cesto; qualquer outra combinação, para o outro | camada oculta ("ser igual" não é uma reta), 2 neurônios | 1 |
+| 6 | Contagem | figuras giradas correm pela esteira e um contador digital soma +1 na forma reconhecida | várias ações (uma por contador), sensor inútil (tamanho, giro) | 2 |
 | 7 | Labirinto Neon | seguir o farol e hackear firewalls | política sensores → ações | 2 |
 | 8 | Tangram | montar o barco: vela, bandeira, casco, proa | multiclasse com 4 ações | 2 |
 | 9 | CAPTCHA | marcar os quadros com triângulos | faixa de valores, sensor de ruído | 2 |
-| 10 | Origami | vincos montanha/vale alternados na folha | padrões periódicos, ativação seno, ruído | 3 |
-| 11 | Quebra-cabeça | a peça encaixa se aba encontra recorte em cima E embaixo | rede profunda (XOR + E) | 3 |
+| 10 | Origami | separar dobraduras de tsuru, sapo, borboleta e peixe pelas asas, pescoço e patas | conjunto de traços, generalização (validação) | 3 |
+| 11 | Quebra-cabeça | falta a última peça de um quebra-cabeça 3×3: peças giradas encaixam no buraco-alvo ou vão para o descarte | rede profunda (contagens + E) | 3 |
 | 12 | Teste de Turing | responder à juíza como um humano | multiclasse não convexa, 2 camadas — zera o jogo | 3 |
 
 As camadas ocultas oferecidas crescem pelo mapa (`MissionDef.layers`) e o upgrade CAMADA EXTRA

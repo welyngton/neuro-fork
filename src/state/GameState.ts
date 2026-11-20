@@ -84,6 +84,8 @@ export interface SaveData {
   achievements: Record<string, number>;
   /** Dicas educativas já mostradas ao menos uma vez. */
   tips: string[];
+  /** Quantas "reformas" de missões já foram aplicadas a este save (ver `REDESIGNED`). */
+  redesign?: number;
   /** Tour guiado da missão-tutorial (Berçário): passo atual e se está em andamento. */
   tour?: { step: number; active: boolean };
   updatedAt: number;
@@ -94,6 +96,13 @@ const STORAGE_KEY = 'neurobot.save.v2';
 /** Missões da v3.3 que foram trocadas na v3.4 (os quatro "campos 2D" quase iguais) -> a missão nova no mesmo lugar do mapa. */
 const RENAMED: Record<string, string> = { quadrantes: 'contagem', ilha: 'tangram', luas: 'origami', alvo: 'quebracabeca' };
 
+/**
+ * Missões cujos sensores e ações mudaram numa versão: o desenho e o treino salvos
+ * (que ligavam sensores que não existem mais) são descartados UMA vez; as estrelas ficam.
+ * Índice = nº da reforma. v3.5: Gêmeos, Contagem, Origami e Quebra-cabeça.
+ */
+const REDESIGNED: string[][] = [['xor', 'contagem', 'origami', 'quebracabeca']];
+
 /** Leva as estrelas das missões trocadas para as novas (o desenho não serve mais e fica para trás). */
 function migrateMissions(save: SaveData): void {
   for (const [from, to] of Object.entries(RENAMED)) {
@@ -102,6 +111,8 @@ function migrateMissions(save: SaveData): void {
     save.missions[to] ??= { stars: old.stars, attempts: old.attempts, ...(old.clean !== undefined ? { clean: old.clean } : {}) };
     delete save.missions[from];
   }
+  for (let n = save.redesign ?? 0; n < REDESIGNED.length; n++) for (const id of REDESIGNED[n]) if (save.missions[id]) delete save.missions[id].design;
+  save.redesign = REDESIGNED.length;
 }
 
 function defaultSave(): SaveData {
@@ -116,6 +127,7 @@ function defaultSave(): SaveData {
     stats: {},
     achievements: {},
     tips: [],
+    redesign: REDESIGNED.length,
     updatedAt: 0,
   };
 }
@@ -142,7 +154,8 @@ export class GameState {
       const parsed = raw ? (JSON.parse(raw) as SaveData) : null;
       // Saves antigos não têm os campos novos: completamos com os padrões.
       if (parsed?.version === 2) {
-        const save = { ...defaultSave(), ...parsed, settings: { ...defaultSave().settings, ...parsed.settings } };
+        // `redesign` ausente = save de antes das reformas (não vale o padrão de um save novo).
+        const save = { ...defaultSave(), ...parsed, redesign: parsed.redesign ?? 0, settings: { ...defaultSave().settings, ...parsed.settings } };
         migrateMissions(save);
         return save;
       }
@@ -359,11 +372,13 @@ export class GameState {
   merge(remote: SaveData): void {
     if (remote?.version !== 2) return;
     const newer = remote.updatedAt > this.data.updatedAt;
+    // Desenhos de missões reformadas depois do save remoto ligam sensores que não existem mais.
+    const stale = new Set(REDESIGNED.slice(remote.redesign ?? 0).flat());
     for (const [id, r] of Object.entries(remote.missions)) {
       const l = (this.data.missions[id] ??= { stars: 0, attempts: 0 });
       l.stars = Math.max(l.stars, r.stars) as Stars;
       l.attempts = Math.max(l.attempts, r.attempts);
-      if (r.design && (newer || !l.design)) l.design = r.design;
+      if (r.design && !stale.has(id) && (newer || !l.design)) l.design = r.design;
     }
     this.data.finished ||= remote.finished;
     this.data.upgrades = [...new Set([...this.data.upgrades, ...(remote.upgrades ?? [])])];

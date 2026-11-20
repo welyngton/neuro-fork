@@ -39,7 +39,7 @@ src/
     ├── BootScene · MenuScene · TutorialScene · GlossaryScene
     ├── ShopScene · AvatarScene · AchievementsScene
     ├── DesignScene · TrainScene · SimulationScene · EndingScene
-    └── skins/           como cada simulação é ENCENADA: sorter · maze · field · captcha · turing
+    └── skins/           como cada simulação é ENCENADA: sorter · counter · puzzle · maze · field · captcha · turing
 ```
 
 ### Regra de dependência

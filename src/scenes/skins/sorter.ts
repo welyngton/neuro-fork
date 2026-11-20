@@ -4,8 +4,9 @@
  * cada um num buraco. Com UMA ação há dois buracos (A = sinal fraco, B = forte);
  * com várias ações há um buraco por ação (vence a mais forte).
  *
- * Usada pelo Berçário, Triagem, Paradoxo XOR (chip de dois LEDs), Contagem
- * (bandeja com encaixes), Tangram (peças do barco) e Quebra-cabeça (peça e vão).
+ * Usada pelo Berçário, Triagem, Paradoxo dos Gêmeos (um par de formas: iguais
+ * num cesto, o resto no outro), Tangram (peças do barco) e Origami (animais de
+ * papel, um cesto para cada).
  */
 import Phaser from 'phaser';
 import { audio } from '../../app/services';
@@ -14,93 +15,32 @@ import { ClassResult } from '../../core/simulation/classification';
 import { Robot } from '../../entities/Robot';
 import { t } from '../../services/i18n';
 import { burst, floatText } from '../../ui/fx';
-import { C, body, chamfer, css, offset, regularPoly, title } from '../../ui/theme';
+import { C, body, chamfer, css, title } from '../../ui/theme';
+import { SHAPE_COLOR, drawOrigami, drawShape } from './shapes';
 import { SkinFactory } from './types';
 
 const V = (x: number, y: number) => new Phaser.Math.Vector2(x, y);
 
-/** Forma pequena (círculo, triângulo ou quadrado) centrada em (x, y). */
-function miniShape(g: Phaser.GameObjects.Graphics, shape: 'circle' | 'triangle' | 'square', x: number, y: number, r: number): void {
-  const color = shape === 'circle' ? C.cyan : shape === 'triangle' ? C.yellow : C.magenta;
-  g.fillStyle(color, 0.35).lineStyle(3, color);
-  if (shape === 'circle') g.fillCircle(x, y, r).strokeCircle(x, y, r);
-  else {
-    const pts = offset(shape === 'triangle' ? regularPoly(3, r * 1.15) : regularPoly(4, r * 1.25, Math.PI / 4), x, y);
-    g.fillPoints(pts, true).strokePoints(pts, true, true);
-  }
-}
-
-/**
- * Contorno de uma peça de quebra-cabeça de lado `s`: cada borda de cima/baixo
- * tem uma ABA (1, para fora) ou um RECORTE (0, para dentro).
- */
-function puzzleOutline(cx: number, cy: number, s: number, top: number, bottom: number): Phaser.Math.Vector2[] {
-  const h = s / 2;
-  const tab = (x0: number, y0: number, dir: number, out: number) => {
-    // Semicírculo no meio da borda, para fora (out=1) ou para dentro (out=0).
-    const pts: Phaser.Math.Vector2[] = [];
-    const sign = out ? dir : -dir;
-    for (let k = 0; k <= 10; k++) {
-      const a = Math.PI - (k / 10) * Math.PI;
-      pts.push(V(x0 + Math.cos(a) * s * 0.18 * -dir, y0 - Math.sin(a) * s * 0.2 * sign));
-    }
-    return pts;
-  };
-  return [
-    V(cx - h, cy - h),
-    ...tab(cx, cy - h, -1, top),
-    V(cx + h, cy - h),
-    V(cx + h, cy + h),
-    ...tab(cx, cy + h, 1, bottom),
-    V(cx - h, cy + h),
-  ];
-}
-
-/** Desenha o item (forma geométrica, chip, bandeja ou peça) num container novo. */
+/** Desenha o item (forma, par de formas ou origami) num container novo. */
 function makeItem(scene: Phaser.Scene, v: SorterVisual): Phaser.GameObjects.Container {
   const g = scene.add.graphics();
-  if (v.shape === 'tray') {
-    // Bandeja com 4 encaixes: o robô precisa CONTAR as peças.
-    const cells = v.cells ?? [];
-    g.fillStyle(0x1b1838).fillPoints(chamfer(196, 64, 10), true).lineStyle(3, C.orange).strokePoints(chamfer(196, 64, 10), true, true);
-    cells.forEach((c, i) => {
-      const x = -72 + i * 48;
-      g.lineStyle(2, C.dim).strokeRect(x - 20, -22, 40, 44);
-      if (c) miniShape(g, c, x, 0, 14);
-    });
-  } else if (v.shape === 'puzzle') {
-    // À esquerda a peça; à direita o vão (tracejado) onde ela precisa entrar.
-    const [pc, pb] = v.piece ?? [0, 0];
-    const [vc, vb] = v.hole ?? [0, 0];
-    const color = v.alt ? C.orange : C.green;
-    const piece = puzzleOutline(-50, 0, 70, pc, pb);
-    g.fillStyle(color, 0.35).fillPoints(piece, true).lineStyle(3, color).strokePoints(piece, true, true);
-    const hole = puzzleOutline(50, 0, 70, vc, vb);
-    g.fillStyle(0x000000, 0.7).fillPoints(hole, true);
-    hole.forEach((p, i) => {
-      if (i % 2 === 0) g.lineStyle(3, C.text, 0.8).lineBetween(p.x, p.y, hole[(i + 1) % hole.length].x, hole[(i + 1) % hole.length].y);
-    });
-  } else if (v.shape === 'chip') {
-    g.fillStyle(0x1b1838).fillPoints(chamfer(110, 64, 10), true);
-    g.lineStyle(3, C.violet).strokePoints(chamfer(110, 64, 10), true, true);
-    [v.a, v.b].forEach((on, i) => {
-      const x = i === 0 ? -26 : 26;
-      g.fillStyle(on ? C.yellow : C.dim, on ? 1 : 0.5).fillPoints(offset(regularPoly(4, 16), x, 0), true);
-      if (on) g.lineStyle(2, 0xffffff).strokePoints(offset(regularPoly(4, 16), x, 0), true, true);
-    });
+  if (v.shape === 'pair') {
+    // Dois itens lado a lado, numa plaquinha: iguais = gêmeos.
+    const [a, b] = v.pair ?? ['circle', 'circle'];
+    g.fillStyle(0x1b1838).fillPoints(chamfer(150, 76, 12), true).lineStyle(3, C.violet).strokePoints(chamfer(150, 76, 12), true, true);
+    drawShape(g, a, -36, 0, 21);
+    drawShape(g, b, 36, 0, 21);
+  } else if (v.shape === 'animal') {
+    drawOrigami(g, v.animal ?? 'tsuru', 1.25);
+    g.setRotation(v.tilt ?? 0);
   } else {
     const r = v.big ? 42 : 24;
     // Na Triagem a cor é um sensor que não tem nada a ver com a regra.
-    const color = v.alt !== undefined ? (v.alt ? C.orange : C.green) : v.shape === 'circle' ? C.cyan : v.shape === 'triangle' ? C.yellow : C.magenta;
-    g.fillStyle(color, 0.3).lineStyle(4, color);
-    if (v.shape === 'circle') g.fillCircle(0, 0, r).strokeCircle(0, 0, r);
-    else if (v.shape === 'parallelogram') {
+    const color = v.alt !== undefined ? (v.alt ? C.orange : C.green) : SHAPE_COLOR[v.shape === 'parallelogram' ? 'square' : v.shape];
+    if (v.shape === 'parallelogram') {
       const pts = [V(-r * 0.6, -r * 0.6), V(r * 1.3, -r * 0.6), V(r * 0.6, r * 0.6), V(-r * 1.3, r * 0.6)];
-      g.fillPoints(pts, true).strokePoints(pts, true, true);
-    } else {
-      const pts = v.shape === 'triangle' ? regularPoly(3, r * 1.15) : regularPoly(4, r * 1.25, Math.PI / 4);
-      g.fillPoints(pts, true).strokePoints(pts, true, true);
-    }
+      g.fillStyle(color, 0.3).lineStyle(4, color).fillPoints(pts, true).strokePoints(pts, true, true);
+    } else drawShape(g, v.shape, 0, 0, r, { color, line: 4 });
   }
   return scene.add.container(0, 0, [g]);
 }
@@ -150,10 +90,13 @@ export const sorterSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
     steps: res.steps.length,
     async play(i) {
       const step = res.steps[i];
-      const item = makeItem(scene, step.case.visual).setPosition(rect.x - 60, beltY - 44);
+      const visual = step.case.visual;
+      // Plaquinhas largas e bichos grandes param mais longe do robô.
+      const stopX = cx - (visual.shape === 'pair' ? 175 : visual.shape === 'animal' ? 150 : 120);
+      const item = makeItem(scene, visual).setPosition(rect.x - 60, beltY - (visual.shape === 'animal' ? 56 : 44));
       bot.setMood('idle');
       thought.setText('');
-      await scene.tween({ targets: item, x: cx - 120, duration: 520, ease: 'Sine.out' });
+      await scene.tween({ targets: item, x: stopX, duration: 520, ease: 'Sine.out' });
 
       // "Pensando": mostra a saída da rede.
       bot.setMood('think');
