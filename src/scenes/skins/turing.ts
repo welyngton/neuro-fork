@@ -13,6 +13,12 @@ import { burst, glow } from '../../ui/fx';
 import { C, body, chamfer, css, offset, regularPoly, title } from '../../ui/theme';
 import { SkinFactory } from './types';
 
+/** Cada balão tem 3 falas parecidas (chave, chave.1, chave.2): sorteia uma a cada partida. */
+function pickLine(base: string): string {
+  const k = Math.floor(Math.random() * 3);
+  return t(k === 0 ? base : `${base}.${k}`);
+}
+
 export const turingSkin: SkinFactory = ({ scene, rect, mission, result, hud }) => {
   const res = result as unknown as ClassResult<TuringVisual>;
   const cy = rect.y + rect.h * 0.56;
@@ -80,7 +86,7 @@ export const turingSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
       qText.setText('');
       aText.setText('').setColor(css(C.text));
       bot.setMood('idle');
-      await type(qText, t(`turing.q${n}`));
+      await type(qText, pickLine(`turing.q${n}`));
       await scene.wait(300);
 
       bot.setMood('think');
@@ -91,12 +97,12 @@ export const turingSkin: SkinFactory = ({ scene, rect, mission, result, hud }) =
         await scene.wait(160);
       }
       if (step.correct) {
-        await type(aText, t(`turing.a${n}`));
+        await type(aText, pickLine(`turing.a${n}`));
         audio.sfx('good');
         bot.setMood('happy').hop();
       } else {
         aText.setColor(css(C.red));
-        await type(aText, t(`turing.bad${step.chosen}`));
+        await type(aText, pickLine(`turing.bad${step.chosen}`));
         audio.sfx('bad');
         bot.setMood('sad').shake();
         scene.cameras.main.shake(140, 0.006);

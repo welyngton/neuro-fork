@@ -21,7 +21,6 @@ import Phaser from 'phaser';
 import { analytics, audio, cloud, state } from '../app/services';
 import { MISSIONS, getMission } from '../core/missions/catalog';
 import { MissionDef } from '../core/missions/types';
-import { avatarLevel } from '../core/progression/avatars';
 import { Robot } from '../entities/Robot';
 import { LOCALES, setLocale, t } from '../services/i18n';
 import { NeonButton } from '../ui/NeonButton';
@@ -84,7 +83,7 @@ export class MenuScene extends BaseScene {
     body(this, cx, 82, t('menu.subtitle'), 16, C.magenta).setOrigin(0.5);
     const mascot = new Robot(this, cx, 168, 0.82);
     this.time.addEvent({ delay: 4000, loop: true, callback: () => mascot.hop() });
-    body(this, cx, 240, `${t('avatar.level', { n: avatarLevel(state.totalStars) })}  ·  ${t('menu.balance', { n: state.balance })}`, 18, C.yellow).setOrigin(0.5);
+    body(this, cx, 240, `${t('avatar.level', { n: state.avatarLevel })}  ·  ${t('menu.balance', { n: state.balance })}`, 18, C.yellow).setOrigin(0.5);
 
     const nav: [string, number, () => void][] = [
       [t('menu.academy'), C.green, () => this.go('Tutorial')],

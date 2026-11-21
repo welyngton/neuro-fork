@@ -25,7 +25,7 @@
  *  - sensores binários valem 0 ou 1; `x`, `y` e `tom` variam de -1 a 1;
  *  - `targets` com 1 coluna = classe binária; com N colunas = one-hot da ação correta.
  */
-import { Topology, createRng, energyCost } from '../nn/network';
+import { Activation, Topology, createRng, energyCost } from '../nn/network';
 import { trainEnergyPerEpoch, waterPerEpoch } from '../progression/resources';
 import { ClassCase } from '../simulation/classification';
 import { FIELD_EXTRA, FieldShape, makeField } from './datasets';
@@ -38,6 +38,11 @@ export function fullyConnected(inputs: string[], hiddenSizes: number[], outputs:
   const links: [string, string][] = [];
   for (let l = 0; l < layers.length - 1; l++) for (const a of layers[l]) for (const b of layers[l + 1]) links.push([a, b]);
   return { inputs, hidden, outputs, links };
+}
+
+/** Dá a mesma ativação a todos os neurônios ocultos da rede (os neurônios "quânticos" ou "radiais" da loja). */
+function withActs(t: Topology, act: Activation): Topology {
+  return { ...t, acts: Object.fromEntries(t.hidden.flat().map((id) => [id, act])) };
 }
 
 /** Rede densa que usa só ALGUNS sensores (os demais ficam sem cabo). */
@@ -499,12 +504,14 @@ export const MISSIONS: MissionDef[] = (<Omit<MissionDef, 'water' | 'coins'>[]>[
     outputs: TANGRAM_OUT,
     layers: 2,
     targetLoss: 0.06,
-    budget: 27,
+    budget: 18,
     energy: 54,
     defaults: { learningRate: 0.1, epochs: 200, activation: 'tanh' },
     train: tangramTrain,
     // A cor da peça não importa: deixá-la sem cabo é parte da 3ª estrela.
-    reference: { topology: denseFrom(TANGRAM_IN, ['cantos', 'grande', 'inclinado'], [3], TANGRAM_OUT), needs: ['cooler'] },
+    // Peças que alternam (lados, inclinação) cabem em ondas: 2 neurônios de SENO fazem o que pedem 3 de tanh,
+    // então a 3ª estrela só vem com a ativação quântica da loja.
+    reference: { topology: withActs(denseFrom(TANGRAM_IN, ['cantos', 'grande', 'inclinado'], [2], TANGRAM_OUT), 'sine'), needs: ['cooler', 'quantum'] },
     minHidden: 2,
     cases: tangramCases,
   },

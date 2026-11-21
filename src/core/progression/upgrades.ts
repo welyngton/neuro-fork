@@ -22,7 +22,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'autowire', cost: 2, area: 'design' },
   { id: 'layer', cost: 3, area: 'design' },
   { id: 'features', cost: 4, area: 'design' },
-  { id: 'battery', cost: 3, area: 'design' },
+  { id: 'battery', cost: 3, area: 'train' },
   { id: 'fiber', cost: 4, area: 'design' },
   { id: 'quantum', cost: 4, area: 'design' },
   { id: 'radial', cost: 4, area: 'design' },
@@ -32,6 +32,8 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'dropout', cost: 3, area: 'train' },
   { id: 'cooler', cost: 3, area: 'train' },
   { id: 'chip', cost: 4, area: 'train' },
+  { id: 'nuclear', cost: 5, area: 'train' },
+  { id: 'dam', cost: 4, area: 'train' },
 ];
 
 /** Limites e ferramentas disponíveis para um conjunto de upgrades. */
@@ -44,7 +46,7 @@ export interface Caps {
   autowire: boolean;
   /** Sensores derivados (x², y², x·y) nas missões que os oferecem. */
   features: boolean;
-  /** Multiplicador da bateria das missões. */
+  /** Multiplicador da bateria de TREINO (grafeno ×1.3, nuclear ×1.6). */
   energyMul: number;
   /** Preço de cada cabo (cabos multidimensionais custam metade). */
   cablePrice: number;
@@ -55,7 +57,7 @@ export interface Caps {
   earlystop: boolean;
   l2: boolean;
   dropout: boolean;
-  /** Multiplicador do tanque de água (radiador criogênico). */
+  /** Multiplicador do tanque de água (radiador ×1.5, barragem ×1.8). */
   waterMul: number;
   /** Multiplicador da energia gasta por época (chip neuromórfico). */
   trainEnergyMul: number;
@@ -71,14 +73,14 @@ export function capsFor(owned: readonly string[]): Caps {
     slots: has('slots') ? 6 : 4,
     autowire: has('autowire'),
     features: has('features'),
-    energyMul: has('battery') ? 1.3 : 1,
+    energyMul: (has('battery') ? 1.3 : 1) * (has('nuclear') ? 1.6 : 1),
     cablePrice: has('fiber') ? 0.5 : 1,
     activations,
     epochValues: has('epochs') ? [50, 100, 200, 400, 800] : [50, 100, 200],
     earlystop: has('earlystop'),
     l2: has('l2'),
     dropout: has('dropout'),
-    waterMul: has('cooler') ? 1.5 : 1,
+    waterMul: (has('cooler') ? 1.5 : 1) * (has('dam') ? 1.8 : 1),
     trainEnergyMul: has('chip') ? 0.7 : 1,
   };
 }

@@ -157,6 +157,7 @@ for (const id of ids) {
     const t = m.reference.topology;
     d.board.hidden = d.board.hidden.map((col, c) => col.map((_, r) => !!t.hidden[c]?.[r]));
     d.board.links = t.links.map((l) => [...l]);
+    d.board.acts = { ...(t.acts ?? {}) };
     state.saveDesign(id, { board: d.board, params: null, seed: 1, epochs: 0, trainSpent: 0, water: undefined, hyper: { ...m.defaults, ...m.reference.hyper }, earlyStop: !!m.reference.earlyStop });
     return missing;
   }, id);
@@ -226,8 +227,8 @@ const assisted = await page.evaluate(() => window.__neuro.state.design('triagem'
 if (!assisted) throw new Error('assistente não marcou a missão');
 await goto(page, 'Design', { missionId: 'xor' });
 await closePopup(page);
-await page.evaluate(() => { const s = window.__game.scene.getScene('Design'); const id = s.view.bp ? 'h0_0' : 'h0_0'; s.setTool('activation'); s.cycleActivation(id); });
-await page.waitForTimeout(600); await shot(page, '02c-toast-ativacao');
+await page.evaluate(() => { const s = window.__game.scene.getScene('Design'); const id = s.view.bp ? 'h0_0' : 'h0_0'; s.setTool('activation'); s.openActivationPicker(id); });
+await page.waitForTimeout(600); await shot(page, '02c-seletor-ativacao');
 
 // Superaquecimento: tanque quase vazio e treina.
 await page.evaluate(() => window.__neuro.state.saveDesign('bercario', { water: 0.3, trainSpent: 0, epochs: 0 }));

@@ -44,7 +44,7 @@ import { fullyConnected } from '../core/missions/catalog';
 import { getMission } from '../core/missions/catalog';
 import { fieldInputs } from '../core/missions/datasets';
 import { MissionDef, toSamples } from '../core/missions/types';
-import { PRICE, countHidden, energyCost, forward, initParams, linkKey, reconcileParams, toInputMap, validateTopology } from '../core/nn/network';
+import { Activation, PRICE, activate, countHidden, energyCost, forward, initParams, linkKey, reconcileParams, toInputMap, validateTopology } from '../core/nn/network';
 import { DESIGN_TOOLS, DesignToolDef } from '../core/progression/tools';
 import { Robot } from '../entities/Robot';
 import { t } from '../services/i18n';
@@ -56,6 +56,12 @@ import { C, body, css, regularPoly, title } from '../ui/theme';
 import { runTour, tourBlocks, touring } from '../ui/Tour';
 import { addPanel } from '../ui/widgets';
 import { BaseScene, MissionSceneData } from './BaseScene';
+
+/** Ordem das ativações no seletor, com o custo (em ★) do upgrade que libera as da loja. */
+const ACT_ORDER: Activation[] = ['tanh', 'relu', 'sigmoid', 'sine', 'gauss'];
+const ACT_UPGRADE_COST: Partial<Record<Activation, number>> = { sine: 4, gauss: 4 };
+/** Missões em que uma ativação específica muda o jogo (dica própria no seletor). */
+const ACT_MISSION_HINT = new Set(['tangram']);
 
 type Tool = 'cable' | 'neuron' | 'eraser' | 'activation' | 'probe' | 'freeze';
 type Icon = (g: Phaser.GameObjects.Graphics, c: number) => void;
@@ -289,7 +295,7 @@ export class DesignScene extends BaseScene {
         }
         return;
       case 'activation':
-        if (isNeuron) this.cycleActivation(node!);
+        if (isNeuron) this.openActivationPicker(node!);
         else if (node) this.fail('design.hint.activation');
         return;
       case 'probe':
@@ -453,20 +459,90 @@ export class DesignScene extends BaseScene {
     this.refresh(true);
   }
 
-  private cycleActivation(id: string): void {
+  /** Troca a ativação de um neurônio e anima a troca. */
+  private setActivation(id: string, next: Activation): void {
     this.snapshot();
     const acts = (this.board.acts ??= {});
-    const cycle = state.caps.activations;
-    const next = cycle[(cycle.indexOf(acts[id] ?? 'tanh') + 1) % cycle.length];
     if (next === 'tanh') delete acts[id];
     else acts[id] = next;
     const p = this.view.posOf(id);
-    audio.sfx('turn', cycle.indexOf(next) * 4);
+    audio.sfx('turn', ACT_ORDER.indexOf(next) * 3);
     this.popAt(p.x, p.y, C.green);
-    floatText(this, p.x, p.y - 34, next.toUpperCase(), css(C.green), 18);
-    // Explicação didática de cada troca (sempre, não só na primeira vez).
-    showToast(this, { title: t('act.title', { f: next.toUpperCase() }), text: t(`act.${next}`), color: C.green, life: 7000 });
+    floatText(this, p.x, p.y - 34, t(`act.name.${next}`), css(C.green), 18);
     this.refresh(true);
+  }
+
+  /**
+   * Seletor de ativação: mostra a CURVA de cada função, para que serve e, nas que
+   * ainda não foram compradas, onde conseguir. Um clique escolhe.
+   */
+  private openActivationPicker(id: string): void {
+    if (this.popup) return;
+    audio.sfx('zap', 5);
+    const layer = this.add.container(0, 0).setDepth(2000);
+    this.popup = layer;
+    const close = (): void => {
+      layer.destroy();
+      this.popup = null;
+    };
+    layer.add(this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.78).setInteractive().on('pointerup', close));
+    const pw = Math.min(this.W - 30, 1180);
+    const ph = 470;
+    const px = this.W / 2 - pw / 2;
+    const py = this.H / 2 - ph / 2;
+    layer.add(addPanel(this, { x: px, y: py, w: pw, h: ph }, C.green, 0.98));
+    layer.add(title(this, this.W / 2, py + 26, t('act.picker.title'), 24, C.green).setOrigin(0.5));
+    layer.add(body(this, this.W / 2, py + 58, t('act.picker.sub'), 17, C.dim).setOrigin(0.5).setWordWrapWidth(pw - 60).setAlign('center'));
+    const owned = state.caps.activations;
+    const current = this.board.acts?.[id] ?? 'tanh';
+    const gap = 10;
+    const cw = (pw - 40 - gap * (ACT_ORDER.length - 1)) / ACT_ORDER.length;
+    ACT_ORDER.forEach((fn, i) => {
+      const x = px + 20 + i * (cw + gap);
+      const y = py + 88;
+      const has = owned.includes(fn);
+      const picked = fn === current;
+      const edge = picked ? C.yellow : has ? C.green : C.panelEdge;
+      layer.add(addPanel(this, { x, y, w: cw, h: 290 }, edge, has ? 0.95 : 0.55));
+      // Curva da função: x de -4 a 4, y de -1.2 a 1.2.
+      const gx = x + 14;
+      const gy = y + 14;
+      const gw = cw - 28;
+      const gh = 96;
+      const g = this.add.graphics();
+      g.fillStyle(0x07050f, 0.9).fillRect(gx, gy, gw, gh);
+      g.lineStyle(1, C.panelEdge, 0.9).lineBetween(gx, gy + gh / 2, gx + gw, gy + gh / 2).lineBetween(gx + gw / 2, gy, gx + gw / 2, gy + gh);
+      g.lineStyle(3, has ? C.green : C.dim, has ? 1 : 0.5).beginPath();
+      for (let k = 0; k <= 60; k++) {
+        const vx = -4 + (8 * k) / 60;
+        const vy = Math.max(-1.2, Math.min(1.2, activate(vx, fn)));
+        const sx = gx + (gw * k) / 60;
+        const sy = gy + gh / 2 - (vy / 1.2) * (gh / 2 - 4);
+        if (k === 0) g.moveTo(sx, sy);
+        else g.lineTo(sx, sy);
+      }
+      g.strokePath();
+      layer.add(g);
+      layer.add(title(this, x + cw / 2, y + 124, t(`act.name.${fn}`), 19, picked ? C.yellow : has ? C.text : C.dim).setOrigin(0.5));
+      layer.add(body(this, x + 12, y + 148, t(`act.use.${fn}`), 15, has ? C.text : C.dim).setWordWrapWidth(cw - 24));
+      const status = picked ? t('act.picker.current') : has ? t('act.picker.choose') : t('act.picker.locked', { n: ACT_UPGRADE_COST[fn] ?? 0 });
+      layer.add(title(this, x + cw / 2, y + 264, status, 15, picked ? C.yellow : has ? C.green : C.orange).setOrigin(0.5));
+      layer.add(
+        this.add
+          .zone(x + cw / 2, y + 145, cw, 290)
+          .setInteractive({ useHandCursor: has })
+          .on('pointerup', () => {
+            if (!has) return void audio.sfx('error');
+            close();
+            if (!picked) this.setActivation(id, fn);
+          }),
+      );
+    });
+    const hint = ACT_MISSION_HINT.has(this.mission.id) ? t(`act.hint.${this.mission.id}`) : t('act.hint.default');
+    layer.add(body(this, this.W / 2, py + 400, hint, 17, C.yellow).setOrigin(0.5).setWordWrapWidth(pw - 60).setAlign('center'));
+    layer.add(new NeonButton(this, this.W / 2, py + ph - 30, 220, 44, t('design.close'), close, { color: C.green, size: 16 }));
+    layer.setAlpha(0);
+    this.tweens.add({ targets: layer, alpha: 1, duration: 200 });
   }
 
   private toggleFreeze(index: number): void {

@@ -13,6 +13,26 @@ function memoryStorage() {
 }
 
 describe('GameState', () => {
+  it('avatar: nível e cores custam 3★ e comprar tudo dá a conquista', () => {
+    const s = new GameState(memoryStorage());
+    expect(s.avatarLevel).toBe(1);
+    expect(s.buyAvatarLevel()).toBe(false); // sem estrelas
+    for (const id of ['bercario', 'triagem', 'fronteira', 'corredor', 'xor', 'contagem', 'labirinto', 'tangram', 'captcha', 'origami', 'quebracabeca', 'turing']) s.recordResult(id, 3, false);
+    expect(s.balance).toBe(36);
+    expect(s.buyAvatarLevel()).toBe(true);
+    expect(s.avatarLevel).toBe(2);
+    expect(s.balance).toBe(33);
+    expect(s.buyAvatarColor('magenta')).toBe(true);
+    expect(s.buyAvatarColor('magenta')).toBe(false); // já comprada
+    expect(s.balance).toBe(30);
+    expect(s.achievementLevels()['avatar_completo']).toBe(0);
+    for (let i = 0; i < 3; i++) s.buyAvatarLevel();
+    for (const c of ['amarelo', 'verde', 'laranja', 'branco']) s.buyAvatarColor(c);
+    expect(s.avatarLevel).toBe(5);
+    expect(s.balance).toBe(36 - 27);
+    expect(s.achievementLevels()['avatar_completo']).toBe(1);
+  });
+
   it('estrelas mínimas travam as 2 últimas fases e rendem moedas no Design', () => {
     const s = new GameState(memoryStorage());
     const m = getMission('turing');

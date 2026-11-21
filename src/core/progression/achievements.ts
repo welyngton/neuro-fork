@@ -19,6 +19,8 @@ export interface AchContext {
   stars: Record<string, number>;
   upgrades: number;
   finished: boolean;
+  /** Comprou todos os níveis e todas as cores do avatar. */
+  avatarDone: boolean;
 }
 
 export interface AchievementDef {
@@ -46,8 +48,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'maratonista', tiers: [1000, 10000, 100000], value: stat('epochs_total') },
   { id: 'cartas', tiers: [1, 10, 40], value: stat('cards_drawn') },
   { id: 'contra_tudo', tiers: [1, 5], value: stat('bad_card_wins') },
-  { id: 'colecionador', tiers: [1, 7, 14], value: (c) => c.upgrades },
+  { id: 'colecionador', tiers: [1, 8, 16], value: (c) => c.upgrades },
   { id: 'estilista', tiers: [1], value: stat('avatar_changes') },
+  { id: 'avatar_completo', tiers: [1], value: (c) => (c.avatarDone ? 1 : 0) },
   { id: 'poliglota', tiers: [1], value: stat('locale_changes') },
   // O lado "zoeira": tropeços que também ensinam.
   { id: 'stop_trying', tiers: [10, 50, 100], value: stat('sims') },

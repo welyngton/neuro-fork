@@ -69,11 +69,18 @@ soma mais uma (até 3). As referências das últimas missões são redes profund
 - **Ferramentas de Design liberadas pelo mapa** (`core/progression/tools.ts`): ATIVAÇÃO por
   neurônio (após a Triagem), SONDA (após a Fronteira), PODA do cabo mais fraco (após o XOR) e
   TRAVA de pesos (após o Labirinto).
-- **Loja**: as estrelas compram 14 upgrades — mais encaixes, camada extra, liga-tudo, sensores
-  derivados (x², y², x·y), bateria de grafeno (+30% de energia), cabos multidimensionais (cabo pela
+- **Ativações**: o pincel de ATIVAÇÃO abre um seletor que mostra a **curva** de cada função (tanh,
+  ReLU, sigmoide e, na loja, seno e gaussiana), para que serve e o preço das ainda bloqueadas. No
+  Tangram a ativação decide a estrela: 2 neurônios de SENO fazem o que pedem 3 de tanh, e a 3ª
+  estrela exige essa economia.
+- **Loja**: as estrelas compram 16 upgrades — mais encaixes, camada extra, liga-tudo, sensores
+  derivados (x², y², x·y), bateria de grafeno (+30% de energia), cabos de fibra (cabo pela
   metade), neurônios quânticos (ativação seno) e radiais (gaussiana), rodadas de 800 épocas, parada
-  antecipada, L2, dropout, radiador criogênico (+50% de água) e chip neuromórfico (-30% de energia
-  por época).
+  antecipada, L2, dropout, radiador criogênico (+50% de água), chip neuromórfico (-30% de energia
+  por época), **bateria nuclear** (+60% de energia, soma com a de grafeno) e **barragem de água**
+  (+80% de água, soma com o radiador) para treinar por mais tempo no fim do jogo.
+- **Loja do avatar**: cada nível de melhoria (2 a 5) e cada cor extra custam 3★; comprar tudo rende a
+  conquista "Visual completo". Os 5 modelos continuam liberados pelo total de estrelas.
 - **Missão-tutorial obrigatória** (com PULAR): no primeiro acesso o Berçário abre com o tour
   guiado (`ui/Tour.ts`), que alterna as 9 lições ilustradas com passos práticos: um véu escuro
   deixa aceso só o botão ou a área da vez, e o balão espera o jogador fazer a ação (pegar a
@@ -90,7 +97,7 @@ soma mais uma (até 3). As referências das últimas missões são redes profund
   preço em energia (compre uma ou siga). Às vezes surge sozinha uma **carta do destino** (sorte ou
   revés) que se vira e já vale; o jogador só lê e volta ao treino. Os nomes vêm do baralho dos slides do prof. Peng Yaohao.
 - **Dicas de conceito**, **lentes do treino** (perda, fronteira, espaço oculto em 3D), **avatar**
-  (5 modelos, 6 cores, 5 níveis) e **26 conquistas** com níveis bronze/prata/ouro.
+  (5 modelos, 6 cores, 5 níveis) e **27 conquistas** com níveis bronze/prata/ouro.
 
 ## Rodando
 

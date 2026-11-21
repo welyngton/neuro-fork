@@ -18,7 +18,7 @@
  */
 import Phaser from 'phaser';
 import { state } from '../app/services';
-import { AVATAR_COLORS, avatarLevel } from '../core/progression/avatars';
+import { AVATAR_COLORS } from '../core/progression/avatars';
 import { glow } from '../ui/fx';
 import { C, chamfer, offset, regularPoly } from '../ui/theme';
 
@@ -35,7 +35,7 @@ export interface RobotLook {
 /** Aparência atual do jogador, lida do save. */
 export function playerLook(): RobotLook {
   const color = AVATAR_COLORS.find((c) => c.id === state.look.color)?.hex ?? C.cyan;
-  return { avatar: state.look.avatar, color, level: avatarLevel(state.totalStars) };
+  return { avatar: state.look.avatar, color, level: state.avatarLevel };
 }
 
 const v = (pts: number[][]) => pts.map(([x, y]) => new Phaser.Math.Vector2(x, y));

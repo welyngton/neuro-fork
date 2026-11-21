@@ -12,7 +12,7 @@ import { Blueprint, Board, blueprintFor, emptyBoard, fitBoard } from '../core/mi
 import { MISSIONS, getMission } from '../core/missions/catalog';
 import { Hyper, Params } from '../core/nn/network';
 import { ACHIEVEMENTS, achievementLevels } from '../core/progression/achievements';
-import { AvatarLook } from '../core/progression/avatars';
+import { AVATAR_COLORS, AVATAR_COLOR_COST, AVATAR_LEVEL_COST, AVATAR_MAX_LEVEL, AvatarLook, AvatarShop, avatarComplete, avatarSpent, legacyAvatarLevel } from '../core/progression/avatars';
 import { Caps, UPGRADES, capsFor } from '../core/progression/upgrades';
 import { coinCeiling } from '../core/progression/resources';
 import { Stars } from '../core/scoring';
@@ -73,6 +73,8 @@ export interface SaveData {
   upgrades: string[];
   /** Aparência escolhida para o robô. */
   look: AvatarLook;
+  /** Níveis e cores do avatar comprados com estrelas. */
+  avatarShop?: AvatarShop;
   /**
    * Contadores para as conquistas. Chaves em uso: neurons_placed, bombs, shuffles,
    * sims, zero_sims, good_loss_lost, duck_wins, full_board_wins, sparse_wins,
@@ -233,7 +235,7 @@ export class GameState {
   /** Estrelas disponíveis para gastar = ganhas − preço dos upgrades comprados. */
   get balance(): number {
     const spent = UPGRADES.filter((u) => this.data.upgrades.includes(u.id)).reduce((n, u) => n + u.cost, 0);
-    return this.totalStars - spent;
+    return this.totalStars - spent - avatarSpent(this.avatarShop);
   }
 
   /** Compra um upgrade. @returns `false` se já tem ou se faltam estrelas. */
@@ -249,6 +251,39 @@ export class GameState {
 
   get look(): Readonly<AvatarLook> {
     return this.data.look;
+  }
+
+  /** Compras do avatar (nível e cores). */
+  get avatarShop(): Readonly<AvatarShop> {
+    return (this.data.avatarShop ??= { level: legacyAvatarLevel(this.totalStars), colors: [...new Set(['ciano', this.data.look.color])] });
+  }
+
+  /** Nível atual do robô (1..5). */
+  get avatarLevel(): number {
+    return this.avatarShop.level;
+  }
+
+  ownsColor(id: string): boolean {
+    return this.avatarShop.colors.includes(id);
+  }
+
+  /** Compra o próximo nível de melhoria do avatar. */
+  buyAvatarLevel(): boolean {
+    const shop = this.avatarShop;
+    if (shop.level >= AVATAR_MAX_LEVEL || this.balance < AVATAR_LEVEL_COST) return false;
+    this.data.avatarShop = { ...shop, level: shop.level + 1 };
+    this.commit();
+    return true;
+  }
+
+  /** Compra uma cor do avatar. */
+  buyAvatarColor(id: string): boolean {
+    const shop = this.avatarShop;
+    const color = AVATAR_COLORS.find((c) => c.id === id);
+    if (!color || shop.colors.includes(id) || this.balance < (color.cost || AVATAR_COLOR_COST)) return false;
+    this.data.avatarShop = { ...shop, colors: [...shop.colors, id] };
+    this.commit();
+    return true;
   }
 
   setLook(patch: Partial<AvatarLook>): void {
@@ -273,7 +308,7 @@ export class GameState {
       const ms = this.data.missions[m.id];
       stars[m.id] = ms ? (ms.clean ?? (ms.design?.assisted ? 0 : ms.stars)) : 0;
     }
-    return achievementLevels({ stats: this.data.stats, stars, upgrades: this.data.upgrades.length, finished: this.data.finished });
+    return achievementLevels({ stats: this.data.stats, stars, upgrades: this.data.upgrades.length, finished: this.data.finished, avatarDone: avatarComplete(this.avatarShop) });
   }
 
   /**
